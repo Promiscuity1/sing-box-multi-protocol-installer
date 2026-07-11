@@ -1,0 +1,38 @@
+name: Test installer
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - alpine:3.23
+          - debian:bookworm-slim
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate installer
+        run: |
+          docker run --rm \
+            -v "$PWD:/work:ro" \
+            -w /work \
+            "${{ matrix.image }}" \
+            sh -c '
+              set -eu
+              sh -n install.sh
+              for protocol in anytls ss2022 vless-reality socks5; do
+                sh install.sh \
+                  --protocol "$protocol" \
+                  --server-address 203.0.113.10 \
+                  --dry-run
+              done
+            '
