@@ -75,9 +75,6 @@ EOF
   apt-get install -y --no-install-recommends sing-box
 }
 
-info 'Installing packages'
-install_packages
-
 existing_manager=0
 [ -f /etc/sing-box/manager.json ] && existing_manager=1
 legacy_config=0
@@ -92,6 +89,12 @@ if [ "$legacy_config" -eq 1 ]; then
   tar -C / -czf "$backup" etc/sing-box var/lib/sing-box-installer root/sing-box-client.txt 2>/dev/null || true
   chmod 0600 "$backup" 2>/dev/null || true
 fi
+info 'Installing packages'
+install_packages
+core_version=$(sing-box version | awk 'NR==1{print $3}')
+core_major=${core_version%%.*}; core_rest=${core_version#*.}; core_minor=${core_rest%%.*}
+[ "$core_major" -gt 1 ] || { [ "$core_major" -eq 1 ] && [ "$core_minor" -ge 12 ]; } || die 'sing-box 1.12.0 or newer is required'
+
 
 info 'Installing sb manager files'
 install -d -m 0755 /usr/local/lib/sb-manager /usr/local/bin
@@ -115,6 +118,8 @@ if [ "$existing_manager" -eq 0 ]; then
   jq -n --arg server_address "$SERVER_ADDRESS" \
     '{schema:1,manager_version:"3.0.0",server_address:$server_address}' >/etc/sing-box/manager.json
 fi
+jq '.manager_version="3.1.0"' /etc/sing-box/manager.json >/etc/sing-box/manager.json.tmp
+mv /etc/sing-box/manager.json.tmp /etc/sing-box/manager.json
 
 chmod 0640 /etc/sing-box/config.json
 chmod 0600 /etc/sing-box/manager.json
@@ -125,9 +130,9 @@ if getent group sing-box >/dev/null 2>&1; then
 fi
 
 if [ "$PLATFORM" = alpine ]; then
-  cat >/etc/init.d/sing-box <<'EOF'
+  cat >/etc/init.d/sb-sing-box <<'EOF'
 #!/sbin/openrc-run
-name="sing-box"
+name="sb-sing-box"
 description="sing-box managed by sb"
 supervisor="supervise-daemon"
 command="/usr/bin/sing-box"
@@ -137,10 +142,10 @@ error_log="/var/log/sing-box.log"
 depend() { after net dns firewall; }
 start_pre() { /usr/bin/sing-box check -c /etc/sing-box/config.json -C /etc/sing-box/conf.d; }
 EOF
-  chmod 0755 /etc/init.d/sing-box
-  rc-update add sing-box default
+  chmod 0755 /etc/init.d/sb-sing-box
+  rc-update add sb-sing-box default
 else
-  cat >/etc/systemd/system/sing-box.service <<'EOF'
+  cat >/etc/systemd/system/sb-sing-box.service <<'EOF'
 [Unit]
 Description=sing-box managed by sb
 After=network-online.target
@@ -164,11 +169,11 @@ CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 WantedBy=multi-user.target
 EOF
   systemctl daemon-reload
-  systemctl enable sing-box
+  systemctl enable sb-sing-box
 fi
 
 sing-box check -c /etc/sing-box/config.json -C /etc/sing-box/conf.d
-if [ "$PLATFORM" = alpine ]; then rc-service sing-box restart || rc-service sing-box start; else systemctl restart sing-box; fi
+if [ "$PLATFORM" = alpine ]; then rc-service sb-sing-box restart || rc-service sb-sing-box start; else systemctl restart sb-sing-box; fi
 
 printf '\nInstallation completed. Run: sb\n'
 [ -z "$backup" ] || printf 'Legacy backup: %s\n' "$backup"

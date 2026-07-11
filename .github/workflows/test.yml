@@ -45,4 +45,14 @@ jobs:
               set -eu
               apk add --no-cache sing-box jq openssl coreutils
               sh tests/render.sh
+              sh tests/render-extended.sh
             '
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: ShellCheck
+        run: |
+          docker run --rm -v "$PWD:/mnt:ro" koalaman/shellcheck:stable \
+            -s sh install.sh sb lib/*.sh tests/*.sh

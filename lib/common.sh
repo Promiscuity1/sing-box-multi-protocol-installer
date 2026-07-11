@@ -81,7 +81,7 @@ node_config_file() {
 }
 
 node_exists() {
-  [ -f "$(node_meta_file "$1")" ] && [ -f "$(node_config_file "$1")" ]
+  [ -f "$(node_meta_file "$1")" ]
 }
 
 list_node_names() {
@@ -100,18 +100,18 @@ manager_server_address() {
   jq -er '.server_address' "$SB_MANAGER_CONFIG"
 }
 
-port_in_metadata() {
-  requested=$1
-  except_name=${2:-}
-  for meta in "$SB_NODE_DIR"/*.json; do
-    [ -f "$meta" ] || continue
-    name=$(jq -r '.name' "$meta")
-    [ "$name" = "$except_name" ] && continue
-    port=$(jq -r '.listen_port' "$meta")
-    [ "$port" != "$requested" ] || return 0
+port_in_metadata() (
+  pim_requested=$1
+  pim_except_name=${2:-}
+  for pim_meta in "$SB_NODE_DIR"/*.json; do
+    [ -f "$pim_meta" ] || continue
+    pim_node_name=$(jq -r '.name' "$pim_meta")
+    [ "$pim_node_name" = "$pim_except_name" ] && continue
+    pim_node_port=$(jq -r '.listen.port' "$pim_meta")
+    [ "$pim_node_port" != "$pim_requested" ] || return 0
   done
   return 1
-}
+)
 
 validate_complete_config() {
   candidate_dir=$1

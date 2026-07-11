@@ -13,8 +13,13 @@ LIB_DIR=${SB_LIB_DIR:-/usr/local/lib/sb-manager}
 . "$LIB_DIR/platform.sh"
 # shellcheck source=lib/protocols.sh
 . "$LIB_DIR/protocols.sh"
+. "$LIB_DIR/protocols_extended.sh"
+. "$LIB_DIR/caddy.sh"
+. "$LIB_DIR/operations.sh"
+. "$LIB_DIR/output.sh"
+. "$LIB_DIR/migrate.sh"
 
-VERSION=3.0.0
+VERSION=3.1.0
 
 usage() {
   cat <<'EOF'
@@ -47,6 +52,7 @@ EOF
 restart_and_verify() {
   previous_active=0
   service_active && previous_active=1 || true
+  caddy_sync
   if [ "$previous_active" -eq 1 ]; then service_restart; else service_enable; service_start; fi
   service_active || return 1
 }
@@ -58,7 +64,7 @@ commit_node_change() {
   staged_cert_dir=${4:-}
   operation=$5
 
-if [ "$operation" = delete ]; then candidate=$(build_candidate_dir "$name" ""); else candidate=$(build_candidate_dir "$name" "$staged_config"); fi
+if [ "$operation" = delete ] || [ "$operation" = disable ]; then candidate=$(build_candidate_dir "$name" ""); else candidate=$(build_candidate_dir "$name" "$staged_config"); fi
   if [ -n "$staged_cert_dir" ] && [ -d "$staged_cert_dir" ]; then
     jq --arg cert "$staged_cert_dir/cert.pem" --arg key "$staged_cert_dir/key.pem" \
       '(.inbounds[0].tls.certificate_path)=$cert | (.inbounds[0].tls.key_path)=$key' \
@@ -76,6 +82,9 @@ if [ "$operation" = delete ]; then candidate=$(build_candidate_dir "$name" ""); 
   if [ "$operation" = delete ]; then
     rm -f "$old_config" "$old_meta"
     rm -rf "$SB_CERT_DIR/$name"
+  elif [ "$operation" = disable ]; then
+    rm -f "$old_config"
+    install -m 0600 "$staged_meta" "$old_meta"
   else
     install -m 0640 "$staged_config" "$old_config"
     install -m 0600 "$staged_meta" "$old_meta"
@@ -109,7 +118,7 @@ command_add() {
   [ "$#" -ge 1 ] || die 'protocol is required'
   protocol=$1
   shift
-  case "$protocol" in anytls|ss2022|vless-reality|socks5) ;; *) die 'unsupported protocol' ;; esac
+  case "$protocol" in anytls|ss2022|vless-reality|socks5|hysteria2|tuic|trojan|vmess|vless-tls) ;; *) die 'unsupported protocol' ;; esac
 
   name=
   listen_address=0.0.0.0
@@ -123,8 +132,15 @@ command_add() {
   reality_port=443
   cert_source=
   key_source=
+  transport=tcp
+  path=/proxy
+  host=
+  tls_mode=
+  acme_email=
+  obfs_password=
 
   while [ "$#" -gt 0 ]; do
+    [ "$#" -ge 2 ] || die "add option requires a value: $1"
     case "$1" in
       --name) name=$2; shift 2 ;;
       --listen-address|--listen) listen_address=$2; shift 2 ;;
@@ -138,11 +154,18 @@ command_add() {
       --reality-port) reality_port=$2; shift 2 ;;
       --cert) cert_source=$2; shift 2 ;;
       --key) key_source=$2; shift 2 ;;
+      --transport) transport=$2; shift 2 ;;
+      --path) path=$2; shift 2 ;;
+      --host) host=$2; shift 2 ;;
+      --tls-mode) tls_mode=$2; shift 2 ;;
+      --acme-email) acme_email=$2; shift 2 ;;
+      --obfs-password) obfs_password=$2; shift 2 ;;
       *) die "unknown add option: $1" ;;
     esac
   done
 
-  [ -n "$listen_port" ] || listen_port=$(protocol_default_port "$protocol")
+  [ -n "$listen_port" ] || listen_port=$(protocol_default_port_all "$protocol")
+  [ -n "$host" ] || host=$public_address
   [ -n "$public_port" ] || public_port=$listen_port
   [ -n "$name" ] || name="$protocol-$listen_port"
   validate_name "$name" || die 'invalid node name'
@@ -159,10 +182,11 @@ command_add() {
   meta=$work/meta.json
   config=$work/config.json
   cert_stage=$work/certs
-  generate_node_metadata "$meta" "$protocol" "$name" "$listen_address" "$listen_port" \
+  protocol_generate "$meta" "$protocol" "$name" "$listen_address" "$listen_port" \
     "$public_address" "$public_port" "$username" "$password" "$ss_method" \
-    "$reality_server" "$reality_port" "$cert_source" "$key_source" "$cert_stage"
-  render_node_config "$meta" "$config"
+    "$reality_server" "$reality_port" "$cert_source" "$key_source" "$cert_stage" \
+    "$transport" "$path" "$host" "$tls_mode" "$acme_email" "$obfs_password"
+  protocol_render "$meta" "$config"
   commit_node_change "$name" "$config" "$meta" "$cert_stage" add
   rm -rf "$work"
   info "Node added: $name"
@@ -170,30 +194,37 @@ command_add() {
 }
 
 command_list() {
-  printf '%-24s %-16s %-18s %-18s\n' NAME PROTOCOL LISTEN PUBLIC
+  printf '%-24s %-16s %-9s %-18s %-18s\n' NAME PROTOCOL ENABLED LISTEN PUBLIC
   for name in $(list_node_names); do
     meta=$(node_meta_file "$name")
-    printf '%-24s %-16s %-18s %-18s\n' \
-      "$name" "$(jq -r '.protocol' "$meta")" \
+    printf '%-24s %-16s %-9s %-18s %-18s\n' \
+      "$name" "$(jq -r '.protocol' "$meta")" "$(jq -r 'if has("enabled") then .enabled else true end' "$meta")" \
       "$(jq -r '.listen.address+":"+(.listen.port|tostring)' "$meta")" \
       "$(jq -r '.public.address+":"+(.public.port|tostring)' "$meta")"
   done
 }
 
 command_info() {
-  [ "$#" -eq 1 ] || die 'node name is required'
-  name=$1
-  node_exists "$name" || die "node not found: $name"
-  meta=$(node_meta_file "$name")
-  jq . "$meta"
-  say 'Share URI:'
-  node_share_uri "$meta"
+  [ "$#" -ge 1 ] || die 'node name is required'
+  info_name=$1; shift
+  info_show=0
+  [ "${1:-}" != --show-secrets ] || info_show=1
+  node_exists "$info_name" || die "node not found: $info_name"
+  info_meta=$(node_meta_file "$info_name")
+  if [ "$info_show" -eq 1 ]; then
+    jq . "$info_meta"
+    say 'Share URI:'
+    protocol_share_uri "$info_meta"
+  else
+    jq 'del(.credentials.password,.reality.private_key) | if .credentials.uuid then .credentials.uuid="***" else . end | if .reality.public_key then .reality.public_key="***" else . end' "$info_meta"
+    say 'Use `sb info NAME --show-secrets` or `sb url NAME` to reveal client credentials.'
+  fi
 }
 
 command_url() {
   [ "$#" -eq 1 ] || die 'node name is required'
   node_exists "$1" || die "node not found: $1"
-  node_share_uri "$(node_meta_file "$1")"
+  protocol_share_uri "$(node_meta_file "$1")"
 }
 
 command_qr() {
@@ -242,7 +273,7 @@ command_change() {
     --argjson public_port "$public_port" --arg updated_at "$(timestamp)" \
     '.listen.port=$listen_port | .public.address=$public_address | .public.port=$public_port | .updated_at=$updated_at' \
     "$source_meta" >"$work/meta.json"
-  render_node_config "$work/meta.json" "$work/config.json"
+  protocol_render "$work/meta.json" "$work/config.json"
 cert_stage=
   protocol=$(jq -r '.protocol' "$source_meta")
   old_public_address=$(jq -r '.public.address' "$source_meta")
@@ -311,7 +342,7 @@ command_uninstall() {
   [ "$yes" -eq 1 ] || confirm 'Uninstall sb manager?' || return 0
   service_active && service_stop || true
   service_enabled && service_disable || true
-  if [ "$SB_PLATFORM" = alpine ]; then rm -f /etc/init.d/sing-box; else rm -f /etc/systemd/system/sing-box.service; systemctl daemon-reload; fi
+  if [ "$SB_PLATFORM" = alpine ]; then rm -f /etc/init.d/sb-sing-box; else rm -f /etc/systemd/system/sb-sing-box.service; systemctl daemon-reload; fi
   rm -f /usr/local/bin/sb
   rm -rf "$SB_RUNTIME_DIR"
   [ "$purge" -eq 0 ] || rm -rf "$SB_HOME"
@@ -355,6 +386,10 @@ EOF
   done
 }
 
+. "$LIB_DIR/output.sh"
+. "$LIB_DIR/change.sh"
+. "$LIB_DIR/maintenance.sh"
+
 require_root
 require_command jq
 require_command sing-box
@@ -366,6 +401,20 @@ command=$1
 shift
 case "$command" in
   add) command_add "$@" ;;
+  migrate) command_migrate "$@" ;;
+  enable) command_enable "$@" ;;
+  disable) command_disable "$@" ;;
+  rotate) command_rotate "$@" ;;
+  export) command_export "$@" ;;
+  client) command_client "$@" ;;
+  snapshot) command_snapshot "$@" ;;
+  rollback) command_rollback_release "$@" ;;
+  manager-rollback) command_manager_rollback ;;
+  core) command_core "$@" ;;
+  doctor) command_doctor "$@" ;;
+  bbr) command_bbr "$@" ;;
+  dns) command_dns "$@" ;;
+  caddy) case "${1:-status}" in sync) caddy_sync ;; status) caddy_status ;; log) caddy_logs "${2:-100}" ;; *) die "usage: sb caddy sync|status|log" ;; esac ;;
   change) command_change "$@" ;;
   list|ls) command_list ;;
   info) command_info "$@" ;;
