@@ -120,7 +120,7 @@ install_sing_box_binary() {
   release_tag=$(printf '%s' "$release_json" | jq -r '.tag_name // empty')
   [ -n "$release_tag" ] || die 'cannot determine the latest sing-box release'
   release_version=${release_tag#v}
-  archive_name=sing-box-${release_version}-linux-${binary_arch}.tar.gz
+  archive_name=sing-box-${release_version}-linux-${binary_arch}-musl.tar.gz
   archive_url=$(printf '%s' "$release_json" | jq -r --arg name "$archive_name" '.assets[] | select(.name == $name) | .browser_download_url')
   expected_checksum=$(printf '%s' "$release_json" | jq -r --arg name "$archive_name" '.assets[] | select(.name == $name) | .digest // empty' | sed 's/^sha256://')
   [ -n "$archive_url" ] || die "official release asset not found: $archive_name"
@@ -141,6 +141,11 @@ install_sing_box_binary() {
     die 'sing-box binary was not found in the official archive'
   }
   install -m 0755 "$binary_path" /usr/bin/sing-box
+  hash -r 2>/dev/null || true
+  /usr/bin/sing-box version >/dev/null 2>&1 || {
+    rm -rf "$binary_root"
+    die 'the downloaded sing-box binary cannot run on this Alpine system'
+  }
   rm -rf "$binary_root"
 }
 
@@ -188,7 +193,12 @@ if [ "$legacy_config" -eq 1 ]; then
 fi
 info 'Installing packages'
 install_packages
-core_version=$(sing-box version | awk 'NR==1{print $3}')
+core_output=$(/usr/bin/sing-box version) || die 'sing-box was installed but cannot run on this system'
+core_version=$(printf '%s\n' "$core_output" | awk 'NR==1{print $3}')
+case "$core_version" in
+  [0-9]*.[0-9]*.*) ;;
+  *) die "cannot parse sing-box version: $core_version" ;;
+esac
 core_major=${core_version%%.*}; core_rest=${core_version#*.}; core_minor=${core_rest%%.*}
 [ "$core_major" -gt 1 ] || { [ "$core_major" -eq 1 ] && [ "$core_minor" -ge 12 ]; } || die 'sing-box 1.12.0 or newer is required'
 
@@ -215,7 +225,7 @@ if [ "$existing_manager" -eq 0 ]; then
   jq -n --arg server_address "$SERVER_ADDRESS" \
     '{schema:1,manager_version:"3.0.0",server_address:$server_address}' >/etc/sing-box/manager.json
 fi
-jq '.manager_version="3.1.1"' /etc/sing-box/manager.json >/etc/sing-box/manager.json.tmp
+jq '.manager_version="3.1.2"' /etc/sing-box/manager.json >/etc/sing-box/manager.json.tmp
 mv /etc/sing-box/manager.json.tmp /etc/sing-box/manager.json
 
 chmod 0640 /etc/sing-box/config.json
