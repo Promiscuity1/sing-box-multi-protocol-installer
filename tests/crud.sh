@@ -39,6 +39,10 @@ run_sb add anytls --name anytls-node --listen-port 33003 --public-port 43003 --p
 anytls_url=$(run_sb url anytls-node)
 [ "$anytls_url" = 'anytls://test-anytls-password@203.0.113.10:43003?insecure=1&fp=chrome#anytls-node' ]
 
+menu_output=$(printf '4\n1\n0\n' | SB_HOME=$TEST_HOME SB_LIB_DIR=$TEST_LIB SB_LOCK_FILE=$TEST_ROOT/menu.lock sh "$REPO_DIR/sb")
+printf '%s\n' "$menu_output" | grep -Fq "$anytls_url"
+printf '%s\n' "$menu_output" | grep -Fq '1) anytls-node  [anytls]  203.0.113.10:43003'
+
 [ -f "$TEST_HOME/nodes/first-node.json" ]
 [ -f "$TEST_HOME/nodes/second-node.json" ]
 [ -f "$TEST_HOME/nodes/anytls-node.json" ]

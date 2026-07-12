@@ -34,7 +34,7 @@ HTTP 类传输可以使用 sing-box 原生 TLS 或 Caddy 自动 HTTPS。Hysteria
 bash <(wget -qO- https://raw.githubusercontent.com/Promiscuity1/sing-box-multi-protocol-installer/main/install.sh)
 ```
 
-运行后按提示输入客户端实际连接使用的公网 IP 或域名。脚本会自动下载最新 Release、验证 SHA-256，然后执行完整安装。
+脚本会自动检测 VPS 的公网 IPv4，并将其作为默认连接地址；直接回车即可采用，也可以输入其他 IP 或域名覆盖。随后脚本会下载最新 Release、验证 SHA-256 并执行完整安装。
 
 Alpine 如果没有 Bash：
 
@@ -46,7 +46,7 @@ bash <(wget -qO- https://raw.githubusercontent.com/Promiscuity1/sing-box-multi-p
 也可以使用无需 Bash 的非交互方式：
 
 ```sh
-wget -qO- https://raw.githubusercontent.com/Promiscuity1/sing-box-multi-protocol-installer/main/install.sh | sh -s -- --server-address 你的公网IP或域名
+wget -qO- https://raw.githubusercontent.com/Promiscuity1/sing-box-multi-protocol-installer/main/install.sh | sh
 ```
 
 使用 `curl`：
@@ -63,7 +63,7 @@ cd sing-box-multi-protocol-installer
 sh install.sh --server-address 你的公网IP或域名
 ```
 
-如果当前终端已经是 `root`，不要加 `sudo`。不要原样填写“你的公网IP或域名”。安装器会在修改软件包前检查已有的非托管配置；只有确认自动备份无误后才应使用 `--force`。
+如果当前终端已经是 `root`，不要加 `sudo`。自动检测失败或需要指定入口域名时，可使用 `--server-address IP或域名`。菜单中的节点操作会自动列出所有节点，可直接输入序号选择，无需记住节点名称。安装器会在修改软件包前检查已有的非托管配置；只有确认自动备份无误后才应使用 `--force`。
 ## NAT 机器示例
 
 假设服务商端口映射为：

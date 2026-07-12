@@ -12,6 +12,23 @@ FORCE=0
 DRY_RUN=0
 SOURCE_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
+detect_public_ipv4() {
+  for public_ip_url in https://api.ipify.org https://ipv4.icanhazip.com https://ifconfig.me/ip; do
+    public_ip=
+    if command -v curl >/dev/null 2>&1; then
+      public_ip=$(curl -4fsS --max-time 8 "$public_ip_url" 2>/dev/null || true)
+    elif command -v wget >/dev/null 2>&1; then
+      public_ip=$(wget -qO- -T 8 "$public_ip_url" 2>/dev/null || true)
+    fi
+    public_ip=$(printf '%s' "$public_ip" | tr -d '[:space:]')
+    if printf '%s' "$public_ip" | awk -F. 'NF==4 {for(i=1;i<=4;i++) if($i !~ /^[0-9]+$/ || $i<0 || $i>255) exit 1; exit 0} {exit 1}'; then
+      printf '%s\n' "$public_ip"
+      return 0
+    fi
+  done
+  return 1
+}
+
 bootstrap_download() {
   bootstrap_url=$1
   bootstrap_output=$2
@@ -48,14 +65,20 @@ bootstrap_if_needed() {
   }
 
   if [ "$#" -eq 0 ]; then
-    [ -r /dev/tty ] || {
-      printf 'Error: use --server-address when running without an interactive terminal\n' >&2
-      exit 1
-    }
-    printf '请输入客户端连接使用的公网 IP 或域名: ' >/dev/tty
-    IFS= read -r bootstrap_server_address </dev/tty
+    bootstrap_detected_address=$(detect_public_ipv4 || true)
+    if [ -t 0 ]; then
+      if [ -n "$bootstrap_detected_address" ]; then
+        printf '检测到公网 IPv4：%s\n直接回车使用该 IP，或输入其他 IP/域名: ' "$bootstrap_detected_address" >/dev/tty
+      else
+        printf '未能自动检测公网 IPv4，请输入客户端连接使用的 IP 或域名: ' >/dev/tty
+      fi
+      IFS= read -r bootstrap_server_address </dev/tty
+      bootstrap_server_address=${bootstrap_server_address:-$bootstrap_detected_address}
+    else
+      bootstrap_server_address=$bootstrap_detected_address
+    fi
     [ -n "$bootstrap_server_address" ] || {
-      printf 'Error: server address cannot be empty\n' >&2
+      printf 'Error: public IP detection failed; use --server-address explicitly\n' >&2
       exit 1
     }
     set -- --server-address "$bootstrap_server_address"
@@ -98,12 +121,24 @@ case "${ID:-}" in alpine) PLATFORM=alpine ;; debian|ubuntu) PLATFORM=systemd ;; 
 
 [ -f "$SOURCE_DIR/sb" ] && [ -d "$SOURCE_DIR/lib" ] || die 'run install.sh from a complete repository checkout'
 
-if [ "$UPGRADE" -eq 0 ]; then
-  [ -n "$SERVER_ADDRESS" ] || die '--server-address is required for initial installation'
+if [ "$UPGRADE" -eq 0 ] && [ -z "$SERVER_ADDRESS" ]; then
+  detected_address=$(detect_public_ipv4 || true)
+  if [ -t 0 ]; then
+    if [ -n "$detected_address" ]; then
+      printf '检测到公网 IPv4：%s\n直接回车使用该 IP，或输入其他 IP/域名: ' "$detected_address" >/dev/tty
+    else
+      printf '未能自动检测公网 IPv4，请输入客户端连接使用的 IP 或域名: ' >/dev/tty
+    fi
+    IFS= read -r SERVER_ADDRESS </dev/tty
+    SERVER_ADDRESS=${SERVER_ADDRESS:-$detected_address}
+  else
+    SERVER_ADDRESS=$detected_address
+  fi
+  [ -n "$SERVER_ADDRESS" ] || die 'public IP detection failed; use --server-address explicitly'
 fi
 
 if [ "$DRY_RUN" -eq 1 ]; then
-  printf 'Dry run passed.\nPlatform: %s\nSource: %s\nUpgrade: %s\n' "$PLATFORM" "$SOURCE_DIR" "$UPGRADE"
+  printf 'Dry run passed.\nPlatform: %s\nSource: %s\nUpgrade: %s\nServer address: %s\n' "$PLATFORM" "$SOURCE_DIR" "$UPGRADE" "$SERVER_ADDRESS"
   exit 0
 fi
 
@@ -225,7 +260,7 @@ if [ "$existing_manager" -eq 0 ]; then
   jq -n --arg server_address "$SERVER_ADDRESS" \
     '{schema:1,manager_version:"3.0.0",server_address:$server_address}' >/etc/sing-box/manager.json
 fi
-jq '.manager_version="3.1.6"' /etc/sing-box/manager.json >/etc/sing-box/manager.json.tmp
+jq '.manager_version="3.1.7"' /etc/sing-box/manager.json >/etc/sing-box/manager.json.tmp
 mv /etc/sing-box/manager.json.tmp /etc/sing-box/manager.json
 
 chmod 0640 /etc/sing-box/config.json

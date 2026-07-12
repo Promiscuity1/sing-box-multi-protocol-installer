@@ -19,7 +19,7 @@ LIB_DIR=${SB_LIB_DIR:-/usr/local/lib/sb-manager}
 . "$LIB_DIR/output.sh"
 . "$LIB_DIR/migrate.sh"
 
-VERSION=3.1.6
+VERSION=3.1.7
 
 usage() {
   cat <<'EOF'
@@ -401,6 +401,42 @@ EOF
   command_add "$@"
 }
 
+interactive_select_node() {
+  menu_nodes=$(list_node_names)
+  if [ -z "$menu_nodes" ]; then
+    warn '当前没有已创建的节点'
+    return 1
+  fi
+
+  say ''
+  say '请选择节点：'
+  menu_index=1
+  for menu_node in $menu_nodes; do
+    menu_meta=$(node_meta_file "$menu_node")
+    menu_protocol=$(jq -r '.protocol' "$menu_meta")
+    menu_public=$(jq -r '.public.address+":"+(.public.port|tostring)' "$menu_meta")
+    printf '%s) %s  [%s]  %s\n' "$menu_index" "$menu_node" "$menu_protocol" "$menu_public"
+    menu_index=$((menu_index + 1))
+  done
+  say '0) 返回主菜单'
+  printf '请输入节点序号: '
+  read -r menu_selection
+  [ "$menu_selection" != 0 ] || return 1
+  case "$menu_selection" in ''|*[!0-9]*) warn '无效的节点序号'; return 1 ;; esac
+
+  menu_index=1
+  menu_selected_node=
+  for menu_node in $menu_nodes; do
+    if [ "$menu_index" -eq "$menu_selection" ]; then
+      menu_selected_node=$menu_node
+      break
+    fi
+    menu_index=$((menu_index + 1))
+  done
+  [ -n "$menu_selected_node" ] || { warn '节点序号不存在'; return 1; }
+  return 0
+}
+
 interactive_menu() {
   while :; do
     cat <<'EOF'
@@ -429,11 +465,12 @@ EOF
     case "$choice" in
       1) interactive_add_node ;;
       2) command_list ;;
-      3) printf '请输入节点名称: '; read -r name; command_info "$name" ;;
-      4) printf '请输入节点名称: '; read -r name; say '节点导入链接（包含密码，请妥善保管）:'; command_url "$name" ;;
-      5) printf '请输入节点名称: '; read -r name; command_qr "$name" ;;
+      3) if interactive_select_node; then command_info "$menu_selected_node"; fi ;;
+      4) if interactive_select_node; then say '节点导入链接（包含密码，请妥善保管）:'; command_url "$menu_selected_node"; fi ;;
+      5) if interactive_select_node; then command_qr "$menu_selected_node"; fi ;;
       6)
-        printf '请输入节点名称: '; read -r name
+        interactive_select_node || continue
+        name=$menu_selected_node
         printf '新的公网 IP 或域名（留空则不修改）: '; read -r address
         printf '新的公网端口（留空则不修改）: '; read -r port
         set -- "$name"
@@ -441,10 +478,10 @@ EOF
         [ -z "$port" ] || set -- "$@" --public-port "$port"
         command_change "$@"
         ;;
-      7) printf '请输入节点名称: '; read -r name; command_enable "$name" ;;
-      8) printf '请输入节点名称: '; read -r name; command_disable "$name" ;;
-      9) printf '请输入节点名称: '; read -r name; command_rotate "$name" ;;
-      10) printf '请输入节点名称: '; read -r name; command_delete "$name" ;;
+      7) if interactive_select_node; then command_enable "$menu_selected_node"; fi ;;
+      8) if interactive_select_node; then command_disable "$menu_selected_node"; fi ;;
+      9) if interactive_select_node; then command_rotate "$menu_selected_node"; fi ;;
+      10) if interactive_select_node; then command_delete "$menu_selected_node"; fi ;;
       11) service_status ;;
       12) service_restart; info '服务已重启' ;;
       13) command_backup ;;
