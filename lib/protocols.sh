@@ -158,6 +158,14 @@ render_node_config() {
   esac
 }
 
+uri_encode() {
+  jq -rn --arg value "$1" '$value|@uri'
+}
+
+base64_url_no_padding() {
+  base64 | tr -d '\n=' | tr '+/' '-_'
+}
+
 node_share_uri() {
   meta=$1
   protocol=$(jq -r '.protocol' "$meta")
@@ -166,27 +174,29 @@ node_share_uri() {
   port=$(jq -r '.public.port' "$meta")
   case "$protocol" in
     anytls)
-      password=$(jq -r '.credentials.password' "$meta")
+      password=$(uri_encode "$(jq -r '.credentials.password' "$meta")")
+      encoded_name=$(uri_encode "$name")
       insecure=$(jq -r 'if .tls.insecure then 1 else 0 end' "$meta")
-      if is_ipv4 "$address"; then query="insecure=$insecure"; else query="sni=$address&insecure=$insecure"; fi
-      printf 'anytls://%s@%s:%s/?%s#%s\n' "$password" "$address" "$port" "$query" "$name"
+      if is_ipv4 "$address"; then query="insecure=$insecure&fp=chrome"; else query="sni=$(uri_encode "$address")&insecure=$insecure&fp=chrome"; fi
+      printf 'anytls://%s@%s:%s?%s#%s\n' "$password" "$address" "$port" "$query" "$encoded_name"
       ;;
     ss2022)
       method=$(jq -r '.credentials.method' "$meta")
-      password=$(jq -r '.credentials.password' "$meta" | sed 's/%/%25/g;s/+/%2B/g;s|/|%2F|g;s/=/%3D/g')
-      printf 'ss://%s:%s@%s:%s#%s\n' "$method" "$password" "$address" "$port" "$name"
+      password=$(jq -r '.credentials.password' "$meta")
+      userinfo=$(printf '%s:%s' "$method" "$password" | base64_url_no_padding)
+      printf 'ss://%s@%s:%s#%s\n' "$userinfo" "$address" "$port" "$(uri_encode "$name")"
       ;;
     vless-reality)
       uuid=$(jq -r '.credentials.uuid' "$meta")
       server=$(jq -r '.reality.server' "$meta")
       public_key=$(jq -r '.reality.public_key' "$meta")
       short_id=$(jq -r '.reality.short_id' "$meta")
-      printf 'vless://%s@%s:%s?encryption=none&security=reality&sni=%s&fp=chrome&pbk=%s&sid=%s&type=tcp&flow=xtls-rprx-vision#%s\n' "$uuid" "$address" "$port" "$server" "$public_key" "$short_id" "$name"
+      printf 'vless://%s@%s:%s?encryption=none&security=reality&sni=%s&fp=chrome&pbk=%s&sid=%s&type=tcp&flow=xtls-rprx-vision#%s\n' "$uuid" "$address" "$port" "$(uri_encode "$server")" "$(uri_encode "$public_key")" "$(uri_encode "$short_id")" "$(uri_encode "$name")"
       ;;
     socks5)
       username=$(jq -r '.credentials.username' "$meta")
       password=$(jq -r '.credentials.password' "$meta")
-      printf 'socks5://%s:%s@%s:%s#%s\n' "$username" "$password" "$address" "$port" "$name"
+      printf 'socks5://%s:%s@%s:%s#%s\n' "$(uri_encode "$username")" "$(uri_encode "$password")" "$address" "$port" "$(uri_encode "$name")"
       ;;
   esac
 }

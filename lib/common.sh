@@ -12,7 +12,7 @@ SB_CERT_DIR=$SB_HOME/certs
 SB_MANAGER_CONFIG=$SB_HOME/manager.json
 SB_BACKUP_DIR=$SB_HOME/backups
 SB_RUNTIME_DIR=/usr/local/lib/sb-manager
-SB_LOCK_FILE=/run/lock/sb-manager.lock
+SB_LOCK_FILE=${SB_LOCK_FILE:-/run/lock/sb-manager.lock}
 
 say() {
   printf '%s\n' "$*"

@@ -19,7 +19,7 @@ LIB_DIR=${SB_LIB_DIR:-/usr/local/lib/sb-manager}
 . "$LIB_DIR/output.sh"
 . "$LIB_DIR/migrate.sh"
 
-VERSION=3.1.3
+VERSION=3.1.4
 
 usage() {
   cat <<'EOF'
@@ -190,7 +190,8 @@ command_add() {
   commit_node_change "$name" "$config" "$meta" "$cert_stage" add
   rm -rf "$work"
   info "节点已添加: $name"
-  command_info "$name"
+  say '节点导入链接（包含密码，请妥善保管）:'
+  command_url "$name"
 }
 
 command_list() {
@@ -408,17 +409,19 @@ sb 中文管理菜单
 1) 添加节点
 2) 查看节点列表
 3) 查看节点详细信息
-4) 修改节点地址或端口
-5) 启用节点
-6) 禁用节点
-7) 重新生成节点密码或密钥
-8) 删除节点
-9) 查看服务状态
-10) 重启服务
-11) 创建备份
-12) 恢复备份
-13) 更新管理器
-14) 系统诊断
+4) 获取节点导入链接
+5) 显示节点二维码
+6) 修改节点地址或端口
+7) 启用节点
+8) 禁用节点
+9) 重新生成节点密码或密钥
+10) 删除节点
+11) 查看服务状态
+12) 重启服务
+13) 创建备份
+14) 恢复备份
+15) 更新管理器
+16) 系统诊断
 0) 退出
 EOF
     printf '请输入选项编号: '
@@ -427,7 +430,9 @@ EOF
       1) interactive_add_node ;;
       2) command_list ;;
       3) printf '请输入节点名称: '; read -r name; command_info "$name" ;;
-      4)
+      4) printf '请输入节点名称: '; read -r name; say '节点导入链接（包含密码，请妥善保管）:'; command_url "$name" ;;
+      5) printf '请输入节点名称: '; read -r name; command_qr "$name" ;;
+      6)
         printf '请输入节点名称: '; read -r name
         printf '新的公网 IP 或域名（留空则不修改）: '; read -r address
         printf '新的公网端口（留空则不修改）: '; read -r port
@@ -436,16 +441,16 @@ EOF
         [ -z "$port" ] || set -- "$@" --public-port "$port"
         command_change "$@"
         ;;
-      5) printf '请输入节点名称: '; read -r name; command_enable "$name" ;;
-      6) printf '请输入节点名称: '; read -r name; command_disable "$name" ;;
-      7) printf '请输入节点名称: '; read -r name; command_rotate "$name" ;;
-      8) printf '请输入节点名称: '; read -r name; command_delete "$name" ;;
-      9) service_status ;;
-      10) service_restart; info '服务已重启' ;;
-      11) command_backup ;;
-      12) printf '请输入备份文件完整路径: '; read -r archive; command_restore "$archive" ;;
-      13) command_update manager ;;
-      14) command_doctor ;;
+      7) printf '请输入节点名称: '; read -r name; command_enable "$name" ;;
+      8) printf '请输入节点名称: '; read -r name; command_disable "$name" ;;
+      9) printf '请输入节点名称: '; read -r name; command_rotate "$name" ;;
+      10) printf '请输入节点名称: '; read -r name; command_delete "$name" ;;
+      11) service_status ;;
+      12) service_restart; info '服务已重启' ;;
+      13) command_backup ;;
+      14) printf '请输入备份文件完整路径: '; read -r archive; command_restore "$archive" ;;
+      15) command_update manager ;;
+      16) command_doctor ;;
       0) return 0 ;;
       *) warn '无效的选项，请重新输入' ;;
     esac

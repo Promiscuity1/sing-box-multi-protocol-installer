@@ -29,19 +29,26 @@ printf '%s\n' '{"log":{"level":"error"},"outbounds":[{"type":"direct","tag":"dir
 printf '%s\n' '{"schema":1,"manager_version":"test","server_address":"203.0.113.10"}' >"$TEST_HOME/manager.json"
 
 run_sb() {
-  SB_HOME=$TEST_HOME SB_LIB_DIR=$TEST_LIB sh "$REPO_DIR/sb" "$@"
+  SB_HOME=$TEST_HOME SB_LIB_DIR=$TEST_LIB SB_LOCK_FILE=$TEST_ROOT/sb-manager.lock sh "$REPO_DIR/sb" "$@"
 }
 
 run_sb add ss2022 --name first-node --listen-port 33001 --public-port 43001 >/dev/null
 run_sb add socks5 --name second-node --listen-port 33002 --public-port 43002 >/dev/null
+run_sb add anytls --name anytls-node --listen-port 33003 --public-port 43003 --password test-anytls-password >/dev/null
+
+anytls_url=$(run_sb url anytls-node)
+[ "$anytls_url" = 'anytls://test-anytls-password@203.0.113.10:43003?insecure=1&fp=chrome#anytls-node' ]
 
 [ -f "$TEST_HOME/nodes/first-node.json" ]
 [ -f "$TEST_HOME/nodes/second-node.json" ]
+[ -f "$TEST_HOME/nodes/anytls-node.json" ]
 [ -f "$TEST_HOME/conf.d/first-node.json" ]
 [ -f "$TEST_HOME/conf.d/second-node.json" ]
+[ -f "$TEST_HOME/conf.d/anytls-node.json" ]
 
 run_sb list | grep -q first-node
 run_sb list | grep -q second-node
+run_sb list | grep -q anytls-node
 
 run_sb disable first-node >/dev/null
 [ "$(jq -r '.enabled' "$TEST_HOME/nodes/first-node.json")" = false ]
@@ -59,11 +66,12 @@ new_password=$(jq -r '.credentials.password' "$TEST_HOME/nodes/second-node.json"
 run_sb change second-node --public-port 44002 >/dev/null
 run_sb url second-node | grep -q ':44002'
 
-run_sb export --all --format json | jq -e '.nodes | length == 2' >/dev/null
+run_sb export --all --format json | jq -e '.nodes | length == 3' >/dev/null
 
 run_sb delete first-node --yes >/dev/null
 [ ! -f "$TEST_HOME/nodes/first-node.json" ]
 [ -f "$TEST_HOME/nodes/second-node.json" ]
+[ -f "$TEST_HOME/nodes/anytls-node.json" ]
 
 sing-box check -c "$TEST_HOME/config.json" -C "$TEST_HOME/conf.d"
 printf 'CRUD integration test passed.\n'

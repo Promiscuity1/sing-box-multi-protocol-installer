@@ -178,26 +178,33 @@ protocol_share_uri() {
   protocol=$(jq -r '.protocol' "$meta")
   if ! extended_protocol "$protocol"; then node_share_uri "$meta"; return; fi
   name=$(jq -r '.name' "$meta"); address=$(jq -r '.public.address' "$meta"); port=$(jq -r '.public.port' "$meta")
+  encoded_name=$(uri_encode "$name")
   insecure=$(jq -r 'if .tls.insecure then 1 else 0 end' "$meta")
   case "$protocol" in
     hysteria2)
-      password=$(jq -r '.credentials.password' "$meta"); obfs=$(jq -r '.obfs.password' "$meta")
-      printf 'hysteria2://%s@%s:%s/?sni=%s&insecure=%s&obfs=salamander&obfs-password=%s#%s\n' "$password" "$address" "$port" "$address" "$insecure" "$obfs" "$name"
+      password=$(uri_encode "$(jq -r '.credentials.password' "$meta")")
+      obfs=$(uri_encode "$(jq -r '.obfs.password' "$meta")")
+      printf 'hysteria2://%s@%s:%s?sni=%s&insecure=%s&obfs=salamander&obfs-password=%s#%s\n' "$password" "$address" "$port" "$(uri_encode "$address")" "$insecure" "$obfs" "$encoded_name"
       ;;
     tuic)
-      uuid=$(jq -r '.credentials.uuid' "$meta"); password=$(jq -r '.credentials.password' "$meta")
-      printf 'tuic://%s:%s@%s:%s?congestion_control=cubic&udp_relay_mode=native&sni=%s&allow_insecure=%s#%s\n' "$uuid" "$password" "$address" "$port" "$address" "$insecure" "$name"
+      uuid=$(jq -r '.credentials.uuid' "$meta")
+      password=$(uri_encode "$(jq -r '.credentials.password' "$meta")")
+      printf 'tuic://%s:%s@%s:%s?congestion_control=cubic&udp_relay_mode=native&sni=%s&allow_insecure=%s#%s\n' "$uuid" "$password" "$address" "$port" "$(uri_encode "$address")" "$insecure" "$encoded_name"
       ;;
     trojan|vless-tls|vmess)
       transport=$(jq -r '.transport.type' "$meta"); path=$(jq -r '.transport.path' "$meta"); host=$(jq -r '.transport.host' "$meta"); tls_mode=$(jq -r '.tls.mode' "$meta")
       security=none; [ "$tls_mode" = none ] || security=tls
-      if [ "$protocol" = trojan ]; then credential=$(jq -r '.credentials.password' "$meta"); scheme=trojan
-      elif [ "$protocol" = vless-tls ]; then credential=$(jq -r '.credentials.uuid' "$meta"); scheme=vless
+      if [ "$protocol" = trojan ]; then
+        credential=$(uri_encode "$(jq -r '.credentials.password' "$meta")")
+        printf 'trojan://%s@%s:%s?security=%s&sni=%s&type=%s&host=%s&path=%s#%s\n' "$credential" "$address" "$port" "$security" "$(uri_encode "$host")" "$transport" "$(uri_encode "$host")" "$(uri_encode "$path")" "$encoded_name"
+      elif [ "$protocol" = vless-tls ]; then
+        credential=$(jq -r '.credentials.uuid' "$meta")
+        printf 'vless://%s@%s:%s?encryption=none&security=%s&sni=%s&type=%s&host=%s&path=%s#%s\n' "$credential" "$address" "$port" "$security" "$(uri_encode "$host")" "$transport" "$(uri_encode "$host")" "$(uri_encode "$path")" "$encoded_name"
       else
-        say 'VMess URI formats are client-specific; use node metadata/client JSON.'
-        return
+        uuid=$(jq -r '.credentials.uuid' "$meta")
+        vmess_json=$(jq -nc --arg name "$name" --arg address "$address" --arg port "$port" --arg uuid "$uuid" --arg transport "$transport" --arg host "$host" --arg path "$path" --arg tls "$security" '{v:"2",ps:$name,add:$address,port:$port,id:$uuid,aid:"0",scy:"auto",net:$transport,type:"none",host:$host,path:$path,tls:(if $tls=="tls" then "tls" else "" end),sni:$host}')
+        printf 'vmess://%s\n' "$(printf '%s' "$vmess_json" | base64 | tr -d '\n')"
       fi
-      printf '%s://%s@%s:%s?security=%s&sni=%s&type=%s&host=%s&path=%s#%s\n' "$scheme" "$credential" "$address" "$port" "$security" "$host" "$transport" "$host" "$path" "$name"
       ;;
   esac
 }
