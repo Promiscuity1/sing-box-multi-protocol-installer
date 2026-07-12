@@ -102,7 +102,7 @@ EOF
     chmod 0755 /etc/init.d/sb-forward
     rc-update add sb-forward default 9>&- >/dev/null 2>&1 || true
     rc-update add crond default 9>&- >/dev/null 2>&1 || true
-    rc-service crond start 9>&- >/dev/null 2>&1 || true
+    rc-service crond start 8>&- 9>&- >/dev/null 2>&1 || true
   else
     cat >/etc/systemd/system/sb-forward-sync.service <<'EOF'
 [Unit]
@@ -128,7 +128,7 @@ Persistent=true
 WantedBy=timers.target
 EOF
     systemctl daemon-reload 9>&-
-    systemctl enable --now sb-forward-sync.timer 9>&-
+    systemctl enable --now sb-forward-sync.timer 8>&- 9>&-
   fi
 }
 
@@ -160,6 +160,11 @@ forward_clear_rules() {
   iptables -X "$SB_FORWARD_CHAIN_FILTER" 2>/dev/null || true
 }
 
+forward_release_sync_lock() {
+  flock -u 8 2>/dev/null || true
+  exec 8>&-
+}
+
 command_forward_sync() {
   require_command iptables
   require_command iptables-save
@@ -171,6 +176,7 @@ command_forward_sync() {
   install -d -m 0755 /run/lock
   exec 8>"$SB_FORWARD_SYNC_LOCK"
   if ! flock -n 8; then
+    exec 8>&-
     [ "$fw_quiet" -eq 1 ] && return 0
     warn '另一个端口转发同步任务正在运行'
     return 1
@@ -187,19 +193,20 @@ command_forward_sync() {
     fw_ip=$(forward_resolve_ipv4 "$fw_host" || true)
     if [ -z "$fw_ip" ]; then
       fw_ip=$(jq -r '.resolved_ip // empty' "$fw_config")
-      [ -n "$fw_ip" ] || { warn "无法解析目标域名且没有历史 IP: $fw_host"; rm -rf "$fw_work"; return 1; }
+      [ -n "$fw_ip" ] || { warn "无法解析目标域名且没有历史 IP: $fw_host"; rm -rf "$fw_work"; forward_release_sync_lock; return 1; }
       [ "$fw_quiet" -eq 1 ] || warn "DNS 解析失败，继续使用上次 IP: $fw_host -> $fw_ip"
     fi
     printf '%s|%s\n' "$fw_config" "$fw_ip" >>"$fw_plan"
   done
 
   fw_backup=$fw_work/iptables.save
-  iptables-save >"$fw_backup" || { rm -rf "$fw_work"; warn '无法备份当前 iptables 规则'; return 1; }
-  forward_enable_kernel || { rm -rf "$fw_work"; warn '无法启用 IPv4 转发'; return 1; }
+  iptables-save >"$fw_backup" || { rm -rf "$fw_work"; warn '无法备份当前 iptables 规则'; forward_release_sync_lock; return 1; }
+  forward_enable_kernel || { rm -rf "$fw_work"; warn '无法启用 IPv4 转发'; forward_release_sync_lock; return 1; }
   if ! forward_apply_plan "$fw_plan"; then
     iptables-restore <"$fw_backup" || true
     rm -rf "$fw_work"
     warn '应用端口转发规则失败，已恢复原防火墙状态'
+    forward_release_sync_lock
     return 1
   fi
 
@@ -209,6 +216,7 @@ command_forward_sync() {
     mv "$fw_config.tmp" "$fw_config"
   done <"$fw_plan"
   rm -rf "$fw_work"
+  forward_release_sync_lock
   [ "$fw_quiet" -eq 1 ] || info '端口转发规则已同步'
 }
 
