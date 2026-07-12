@@ -12,42 +12,42 @@ detect_platform() {
 }
 
 service_active() {
-  if [ "$SB_PLATFORM" = alpine ]; then rc-service sb-sing-box status >/dev/null 2>&1; else systemctl is-active --quiet sb-sing-box; fi
+  if [ "$SB_PLATFORM" = alpine ]; then rc-service sb-sing-box status 9>&- >/dev/null 2>&1; else systemctl is-active --quiet sb-sing-box 9>&-; fi
 }
 
 service_enabled() {
   if [ "$SB_PLATFORM" = alpine ]; then
-    rc-update show default | grep -Eq '^[[:space:]]*sb-sing-box([[:space:]]|$)'
+    rc-update show default 9>&- | grep -Eq '^[[:space:]]*sb-sing-box([[:space:]]|$)'
   else
-    systemctl is-enabled --quiet sb-sing-box
+    systemctl is-enabled --quiet sb-sing-box 9>&-
   fi
 }
 
 service_start() {
-  if [ "$SB_PLATFORM" = alpine ]; then rc-service sb-sing-box start; else systemctl start sb-sing-box; fi
+  if [ "$SB_PLATFORM" = alpine ]; then rc-service sb-sing-box start 9>&-; else systemctl start sb-sing-box 9>&-; fi
 }
 
 service_stop() {
-  if [ "$SB_PLATFORM" = alpine ]; then rc-service sb-sing-box stop; else systemctl stop sb-sing-box; fi
+  if [ "$SB_PLATFORM" = alpine ]; then rc-service sb-sing-box stop 9>&-; else systemctl stop sb-sing-box 9>&-; fi
 }
 
 service_restart() {
-  if [ "$SB_PLATFORM" = alpine ]; then rc-service sb-sing-box restart; else systemctl restart sb-sing-box; fi
+  if [ "$SB_PLATFORM" = alpine ]; then rc-service sb-sing-box restart 9>&-; else systemctl restart sb-sing-box 9>&-; fi
 }
 
 service_enable() {
-  if [ "$SB_PLATFORM" = alpine ]; then rc-update add sb-sing-box default; else systemctl enable sb-sing-box; fi
+  if [ "$SB_PLATFORM" = alpine ]; then rc-update add sb-sing-box default 9>&-; else systemctl enable sb-sing-box 9>&-; fi
 }
 
 service_disable() {
-  if [ "$SB_PLATFORM" = alpine ]; then rc-update del sb-sing-box default; else systemctl disable sb-sing-box; fi
+  if [ "$SB_PLATFORM" = alpine ]; then rc-update del sb-sing-box default 9>&-; else systemctl disable sb-sing-box 9>&-; fi
 }
 
 service_status() {
   if [ "$SB_PLATFORM" = alpine ]; then
-    rc-service sb-sing-box status
+    rc-service sb-sing-box status 9>&-
   else
-    systemctl status sb-sing-box --no-pager
+    systemctl status sb-sing-box --no-pager 9>&-
   fi
 }
 

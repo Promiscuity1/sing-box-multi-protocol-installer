@@ -46,12 +46,12 @@ caddy_sync() {
   install -m 0644 "$tmp" "$CADDY_SB_FILE"
   rm -f "$tmp"
   caddy validate --config "$CADDY_FILE"
-  if [ "$SB_PLATFORM" = alpine ]; then rc-update add caddy default; rc-service caddy restart || rc-service caddy start; else systemctl enable --now caddy; systemctl reload caddy; fi
+  if [ "$SB_PLATFORM" = alpine ]; then rc-update add caddy default; rc-service caddy restart 9>&- || rc-service caddy start 9>&-; else systemctl enable --now caddy 9>&-; systemctl reload caddy 9>&-; fi
 }
 
 caddy_status() {
   command -v caddy >/dev/null 2>&1 || { say 'Caddy is not installed.'; return; }
-  if [ "$SB_PLATFORM" = alpine ]; then rc-service caddy status; else systemctl status caddy --no-pager; fi
+  if [ "$SB_PLATFORM" = alpine ]; then rc-service caddy status 9>&-; else systemctl status caddy --no-pager 9>&-; fi
 }
 
 caddy_logs() {

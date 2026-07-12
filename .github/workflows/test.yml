@@ -47,6 +47,7 @@ jobs:
               apk add --no-cache sing-box jq openssl coreutils
               sh tests/render.sh
               sh tests/render-extended.sh
+              sh tests/lock-fd.sh
             '
 
   shellcheck:
