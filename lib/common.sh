@@ -23,11 +23,11 @@ info() {
 }
 
 warn() {
-  printf 'Warning: %s\n' "$*" >&2
+  printf '警告: %s\n' "$*" >&2
 }
 
 die() {
-  printf 'Error: %s\n' "$*" >&2
+  printf '错误: %s\n' "$*" >&2
   exit 1
 }
 

@@ -19,7 +19,7 @@ LIB_DIR=${SB_LIB_DIR:-/usr/local/lib/sb-manager}
 . "$LIB_DIR/output.sh"
 . "$LIB_DIR/migrate.sh"
 
-VERSION=3.1.2
+VERSION=3.1.3
 
 usage() {
   cat <<'EOF'
@@ -189,12 +189,12 @@ command_add() {
   protocol_render "$meta" "$config"
   commit_node_change "$name" "$config" "$meta" "$cert_stage" add
   rm -rf "$work"
-  info "Node added: $name"
+  info "节点已添加: $name"
   command_info "$name"
 }
 
 command_list() {
-  printf '%-24s %-16s %-9s %-18s %-18s\n' NAME PROTOCOL ENABLED LISTEN PUBLIC
+  printf '%-24s %-16s %-9s %-18s %-18s\n' 节点名称 协议 状态 内部监听 公网地址
   for name in $(list_node_names); do
     meta=$(node_meta_file "$name")
     printf '%-24s %-16s %-9s %-18s %-18s\n' \
@@ -213,11 +213,11 @@ command_info() {
   info_meta=$(node_meta_file "$info_name")
   if [ "$info_show" -eq 1 ]; then
     jq . "$info_meta"
-    say 'Share URI:'
+    say '分享链接:'
     protocol_share_uri "$info_meta"
   else
     jq 'del(.credentials.password,.reality.private_key) | if .credentials.uuid then .credentials.uuid="***" else . end | if .reality.public_key then .reality.public_key="***" else . end' "$info_meta"
-    say 'Use `sb info NAME --show-secrets` or `sb url NAME` to reveal client credentials.'
+    say '使用 `sb info 节点名 --show-secrets` 或 `sb url 节点名` 查看完整凭据。'
   fi
 }
 
@@ -229,7 +229,7 @@ command_url() {
 
 command_qr() {
   url=$(command_url "$@")
-  if command -v qrencode >/dev/null 2>&1; then qrencode -t ANSIUTF8 "$url"; else say "$url"; warn 'qrencode is not installed'; fi
+  if command -v qrencode >/dev/null 2>&1; then qrencode -t ANSIUTF8 "$url"; else say "$url"; warn '未安装 qrencode，已直接输出链接'; fi
 }
 
 command_delete() {
@@ -239,12 +239,12 @@ command_delete() {
   yes=0
   [ "${1:-}" != --yes ] || yes=1
   node_exists "$name" || die "node not found: $name"
-  [ "$yes" -eq 1 ] || confirm "Delete node $name?" || return 0
+  [ "$yes" -eq 1 ] || confirm "确定删除节点 $name 吗？" || return 0
   empty=$(mktemp /tmp/sb-empty.XXXXXX)
   : >"$empty"
   commit_node_change "$name" "$empty" "$empty" '' delete
   rm -f "$empty"
-  info "Node deleted: $name"
+  info "节点已删除: $name"
 }
 
 command_change() {
@@ -290,7 +290,7 @@ cert_stage=
   fi
   commit_node_change "$name" "$work/config.json" "$work/meta.json" "$cert_stage" change
   rm -rf "$work"
-  info "Node changed: $name"
+  info "节点已修改: $name"
   command_info "$name"
 }
 
@@ -349,39 +349,105 @@ command_uninstall() {
   if [ "$remove_core" -eq 1 ]; then
     if [ "$SB_PLATFORM" = alpine ]; then apk del sing-box sing-box-openrc || true; else apt-get remove -y sing-box || true; fi
   fi
-  info 'sb manager uninstalled.'
+  info 'sb 管理器已卸载'
+}
+
+interactive_add_node() {
+  cat <<'EOF'
+
+请选择节点协议：
+1) AnyTLS
+2) Shadowsocks 2022
+3) VLESS + REALITY
+4) SOCKS5
+5) Hysteria2
+6) TUIC
+7) Trojan
+8) VMess
+9) VLESS TLS
+0) 返回主菜单
+EOF
+  printf '请输入协议编号: '
+  read -r protocol_choice
+  case "$protocol_choice" in
+    1) menu_protocol=anytls ;;
+    2) menu_protocol=ss2022 ;;
+    3) menu_protocol=vless-reality ;;
+    4) menu_protocol=socks5 ;;
+    5) menu_protocol=hysteria2 ;;
+    6) menu_protocol=tuic ;;
+    7) menu_protocol=trojan ;;
+    8) menu_protocol=vmess ;;
+    9) menu_protocol=vless-tls ;;
+    0) return 0 ;;
+    *) warn '无效的协议编号'; return 1 ;;
+  esac
+
+  printf '节点名称（留空则自动生成）: '
+  read -r menu_name
+  printf '内部监听端口（留空则使用默认端口）: '
+  read -r menu_listen_port
+  printf '客户端连接的公网 IP 或域名（留空使用安装时设置）: '
+  read -r menu_public_address
+  printf 'NAT 映射后的公网端口（留空则与内部端口相同）: '
+  read -r menu_public_port
+
+  set -- "$menu_protocol"
+  [ -z "$menu_name" ] || set -- "$@" --name "$menu_name"
+  [ -z "$menu_listen_port" ] || set -- "$@" --listen-port "$menu_listen_port"
+  [ -z "$menu_public_address" ] || set -- "$@" --public-address "$menu_public_address"
+  [ -z "$menu_public_port" ] || set -- "$@" --public-port "$menu_public_port"
+  command_add "$@"
 }
 
 interactive_menu() {
   while :; do
     cat <<'EOF'
 
-sb manager
-1) Add node
-2) List nodes
-3) Node info
-4) Change node address/port
-5) Delete node
-6) Service status
-7) Restart service
-8) Backup
-9) Update
-0) Exit
+sb 中文管理菜单
+1) 添加节点
+2) 查看节点列表
+3) 查看节点详细信息
+4) 修改节点地址或端口
+5) 启用节点
+6) 禁用节点
+7) 重新生成节点密码或密钥
+8) 删除节点
+9) 查看服务状态
+10) 重启服务
+11) 创建备份
+12) 恢复备份
+13) 更新管理器
+14) 系统诊断
+0) 退出
 EOF
-    printf 'Select: '
+    printf '请输入选项编号: '
     read -r choice
     case "$choice" in
-      1) printf 'Protocol (anytls/ss2022/vless-reality/socks5): '; read -r protocol; printf 'Name: '; read -r name; printf 'Listen port: '; read -r port; command_add "$protocol" --name "$name" --listen-port "$port" ;;
+      1) interactive_add_node ;;
       2) command_list ;;
-      3) printf 'Name: '; read -r name; command_info "$name" ;;
-      4) printf 'Name: '; read -r name; printf 'Public port: '; read -r port; command_change "$name" --public-port "$port" ;;
-      5) printf 'Name: '; read -r name; command_delete "$name" ;;
-      6) service_status ;;
-      7) service_restart ;;
-      8) command_backup ;;
-      9) command_update ;;
+      3) printf '请输入节点名称: '; read -r name; command_info "$name" ;;
+      4)
+        printf '请输入节点名称: '; read -r name
+        printf '新的公网 IP 或域名（留空则不修改）: '; read -r address
+        printf '新的公网端口（留空则不修改）: '; read -r port
+        set -- "$name"
+        [ -z "$address" ] || set -- "$@" --public-address "$address"
+        [ -z "$port" ] || set -- "$@" --public-port "$port"
+        command_change "$@"
+        ;;
+      5) printf '请输入节点名称: '; read -r name; command_enable "$name" ;;
+      6) printf '请输入节点名称: '; read -r name; command_disable "$name" ;;
+      7) printf '请输入节点名称: '; read -r name; command_rotate "$name" ;;
+      8) printf '请输入节点名称: '; read -r name; command_delete "$name" ;;
+      9) service_status ;;
+      10) service_restart; info '服务已重启' ;;
+      11) command_backup ;;
+      12) printf '请输入备份文件完整路径: '; read -r archive; command_restore "$archive" ;;
+      13) command_update manager ;;
+      14) command_doctor ;;
       0) return 0 ;;
-      *) warn 'invalid selection' ;;
+      *) warn '无效的选项，请重新输入' ;;
     esac
   done
 }

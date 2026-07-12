@@ -20,7 +20,7 @@ command_backup() {
   sha256sum "$mb_archive" >"$mb_archive.sha256"
   chmod 0600 "$mb_archive.sha256"
   rm -rf "$mb_work"
-  info "Backup created: $mb_archive"
+  info "备份已创建: $mb_archive"
 }
 
 command_restore() {
@@ -51,7 +51,7 @@ command_restore() {
     die 'restored configuration failed to start; previous release restored'
   fi
   rm -rf "$mr_work"
-  info 'Backup restored.'
+  info '备份恢复完成。'
 }
 
 command_update() {
@@ -79,7 +79,7 @@ command_update() {
         die 'manager update failed and was rolled back'
       fi
       rm -rf "$mu_work"
-      info 'Manager updated.'
+      info '管理器更新完成。'
       ;;
     core)
       command_core update
@@ -94,7 +94,7 @@ command_manager_rollback() {
   rm -rf "$SB_RUNTIME_DIR"
   cp -R "$mr_latest/runtime" "$SB_RUNTIME_DIR"
   cp "$mr_latest/sb" /usr/local/bin/sb
-  info "Manager rolled back from: $mr_latest"
+  info "管理器已从备份回滚: $mr_latest"
 }
 
 command_core() {

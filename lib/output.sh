@@ -86,6 +86,6 @@ command_export() {
     fi
   done
   [ "$po_format" != json ] || printf ']}\n' >>"$po_tmp"
-  if [ -n "$po_output" ]; then install -m 0600 "$po_tmp" "$po_output"; info "Export written: $po_output"; else cat "$po_tmp"; fi
+  if [ -n "$po_output" ]; then install -m 0600 "$po_tmp" "$po_output"; info "导出文件已保存: $po_output"; else cat "$po_tmp"; fi
   rm -f "$po_tmp"
 }

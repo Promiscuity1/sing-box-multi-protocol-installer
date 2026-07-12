@@ -4,26 +4,26 @@ command_enable() {
   [ "$#" -eq 1 ] || die 'node name is required'
   op_name=$1; op_meta=$(node_meta_file "$op_name")
   [ -f "$op_meta" ] || die "node not found: $op_name"
-  [ "$(jq -r 'if has("enabled") then .enabled else true end' "$op_meta")" = false ] || { info 'Node is already enabled.'; return; }
+  [ "$(jq -r 'if has("enabled") then .enabled else true end' "$op_meta")" = false ] || { info '节点已经处于启用状态。'; return; }
   op_work=$(mktemp -d /tmp/sb-enable.XXXXXX)
   jq '.enabled=true | .updated_at=(now|todate)' "$op_meta" >"$op_work/meta.json"
   protocol_render "$op_work/meta.json" "$op_work/config.json"
   commit_node_change "$op_name" "$op_work/config.json" "$op_work/meta.json" '' enable
   rm -rf "$op_work"
-  info "Node enabled: $op_name"
+  info "节点已启用: $op_name"
 }
 
 command_disable() {
   [ "$#" -eq 1 ] || die 'node name is required'
   op_name=$1; op_meta=$(node_meta_file "$op_name")
   [ -f "$op_meta" ] || die "node not found: $op_name"
-  [ "$(jq -r 'if has("enabled") then .enabled else true end' "$op_meta")" != false ] || { info 'Node is already disabled.'; return; }
+  [ "$(jq -r 'if has("enabled") then .enabled else true end' "$op_meta")" != false ] || { info '节点已经处于禁用状态。'; return; }
   op_work=$(mktemp -d /tmp/sb-disable.XXXXXX)
   jq '.enabled=false | .updated_at=(now|todate)' "$op_meta" >"$op_work/meta.json"
   : >"$op_work/empty"
   commit_node_change "$op_name" "$op_work/empty" "$op_work/meta.json" '' disable
   rm -rf "$op_work"
-  info "Node disabled: $op_name"
+  info "节点已禁用: $op_name"
 }
 
 command_rotate() {
@@ -61,7 +61,7 @@ command_rotate() {
   protocol_render "$op_work/meta.json" "$op_work/config.json"
   commit_node_change "$op_name" "$op_work/config.json" "$op_work/meta.json" '' rotate
   rm -rf "$op_work"
-  info "Credentials rotated: $op_name"
+  info "节点密码或密钥已重新生成: $op_name"
   command_info "$op_name"
 }
 
@@ -91,7 +91,7 @@ command_snapshot() {
   cp "$SB_MANAGER_CONFIG" "$op_dir/manager.json"
   cp -R "$SB_CONF_DIR" "$SB_NODE_DIR" "$SB_CERT_DIR" "$op_dir/"
   sing-box check -c "$op_dir/config.json" -C "$op_dir/conf.d"
-  info "Release snapshot: $op_id"
+  info "快照已创建: $op_id"
 }
 
 command_rollback_release() {
@@ -104,13 +104,13 @@ command_rollback_release() {
   cp "$op_dir/config.json" "$SB_BASE_CONFIG"; cp "$op_dir/manager.json" "$SB_MANAGER_CONFIG"
   cp -R "$op_dir/conf.d" "$SB_CONF_DIR"; cp -R "$op_dir/nodes" "$SB_NODE_DIR"; cp -R "$op_dir/certs" "$SB_CERT_DIR"
   restart_and_verify
-  info "Rolled back to release: $1"
+  info "已回滚到快照: $1"
 }
 
 command_doctor() {
   say "sing-box: $(sing-box version | head -n 1)"
-  say "platform: $SB_PLATFORM"
-  service_active && say 'service: active' || say 'service: inactive'
+  say "系统平台: $SB_PLATFORM"
+  service_active && say '服务状态: 运行中' || say '服务状态: 未运行'
   command_check || true
   for op_name in $(list_node_names); do
     op_meta=$(node_meta_file "$op_name")
@@ -119,8 +119,8 @@ command_doctor() {
     op_listen=$(jq -r '.listen.address+":"+(.listen.port|tostring)' "$op_meta")
     op_public=$(jq -r '.public.address+":"+(.public.port|tostring)' "$op_meta")
     op_transports=$(jq -r '.listen.transports|join(",")' "$op_meta")
-    say "$op_name [$op_protocol] enabled=$op_enabled listen=$op_listen public=$op_public transport=$op_transports"
-    op_domain=$(jq -r '.public.address' "$op_meta"); getent ahosts "$op_domain" 2>/dev/null | head -n 1 || warn "DNS lookup failed: $op_domain"
+    say "$op_name [$op_protocol] 启用=$op_enabled 内部监听=$op_listen 公网地址=$op_public 传输=$op_transports"
+    op_domain=$(jq -r '.public.address' "$op_meta"); getent ahosts "$op_domain" 2>/dev/null | head -n 1 || warn "DNS 解析失败: $op_domain"
   done
   if command -v ufw >/dev/null 2>&1; then ufw status; fi
   if command -v nft >/dev/null 2>&1; then nft list ruleset 2>/dev/null | head -n 40; elif command -v iptables >/dev/null 2>&1; then iptables -S | head -n 40; fi
@@ -137,6 +137,6 @@ command_bbr() {
 }
 
 command_dns() {
-  say 'Resolvers:'; cat /etc/resolv.conf
+  say 'DNS 服务器:'; cat /etc/resolv.conf
   for op_name in $(list_node_names); do op_host=$(jq -r '.public.address' "$(node_meta_file "$op_name")"); say "$op_name: $op_host"; getent ahosts "$op_host" 2>/dev/null | head -n 3 || true; done
 }
