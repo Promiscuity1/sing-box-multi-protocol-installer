@@ -225,7 +225,7 @@ if [ "$existing_manager" -eq 0 ]; then
   jq -n --arg server_address "$SERVER_ADDRESS" \
     '{schema:1,manager_version:"3.0.0",server_address:$server_address}' >/etc/sing-box/manager.json
 fi
-jq '.manager_version="3.1.5"' /etc/sing-box/manager.json >/etc/sing-box/manager.json.tmp
+jq '.manager_version="3.1.6"' /etc/sing-box/manager.json >/etc/sing-box/manager.json.tmp
 mv /etc/sing-box/manager.json.tmp /etc/sing-box/manager.json
 
 chmod 0640 /etc/sing-box/config.json
@@ -280,7 +280,7 @@ EOF
 fi
 
 sing-box check -c /etc/sing-box/config.json -C /etc/sing-box/conf.d
-if [ "$PLATFORM" = alpine ]; then rc-service sb-sing-box restart || rc-service sb-sing-box start; else systemctl restart sb-sing-box; fi
+if [ "$PLATFORM" = alpine ]; then rc-service sb-sing-box restart 9>&- || rc-service sb-sing-box start 9>&-; else systemctl restart sb-sing-box 9>&-; fi
 
 printf '\nInstallation completed. Run: sb\n'
 [ -z "$backup" ] || printf 'Legacy backup: %s\n' "$backup"
