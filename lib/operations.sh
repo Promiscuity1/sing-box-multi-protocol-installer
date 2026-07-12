@@ -89,7 +89,7 @@ command_snapshot() {
   install -d -m 0700 "$op_dir"
   cp "$SB_BASE_CONFIG" "$op_dir/config.json"
   cp "$SB_MANAGER_CONFIG" "$op_dir/manager.json"
-  cp -R "$SB_CONF_DIR" "$SB_NODE_DIR" "$SB_CERT_DIR" "$op_dir/"
+  cp -R "$SB_CONF_DIR" "$SB_NODE_DIR" "$SB_CERT_DIR" "$SB_FORWARD_DIR" "$op_dir/"
   sing-box check -c "$op_dir/config.json" -C "$op_dir/conf.d"
   info "快照已创建: $op_id"
 }
@@ -100,10 +100,13 @@ command_rollback_release() {
   [ -d "$op_dir" ] || die 'release not found'
   sing-box check -c "$op_dir/config.json" -C "$op_dir/conf.d"
   command_snapshot "before-rollback-$(timestamp)-$$"
-  rm -rf "$SB_CONF_DIR" "$SB_NODE_DIR" "$SB_CERT_DIR"
+  rm -rf "$SB_CONF_DIR" "$SB_NODE_DIR" "$SB_CERT_DIR" "$SB_FORWARD_DIR"
   cp "$op_dir/config.json" "$SB_BASE_CONFIG"; cp "$op_dir/manager.json" "$SB_MANAGER_CONFIG"
   cp -R "$op_dir/conf.d" "$SB_CONF_DIR"; cp -R "$op_dir/nodes" "$SB_NODE_DIR"; cp -R "$op_dir/certs" "$SB_CERT_DIR"
+  if [ -d "$op_dir/forwards" ]; then cp -R "$op_dir/forwards" "$SB_FORWARD_DIR"; else install -d -m 0700 "$SB_FORWARD_DIR"; fi
   restart_and_verify
+  command_forward_sync --quiet
+  if [ -n "$(forward_list_names)" ]; then forward_install_scheduler; else forward_remove_scheduler; fi
   info "已回滚到快照: $1"
 }
 

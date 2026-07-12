@@ -11,6 +11,7 @@ SB_NODE_DIR=$SB_HOME/nodes
 SB_CERT_DIR=$SB_HOME/certs
 SB_MANAGER_CONFIG=$SB_HOME/manager.json
 SB_BACKUP_DIR=$SB_HOME/backups
+SB_FORWARD_DIR=$SB_HOME/forwards
 SB_RUNTIME_DIR=/usr/local/lib/sb-manager
 SB_LOCK_FILE=${SB_LOCK_FILE:-/run/lock/sb-manager.lock}
 

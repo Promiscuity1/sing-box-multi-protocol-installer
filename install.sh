@@ -47,7 +47,7 @@ bootstrap_if_needed() {
 
   bootstrap_root=$(mktemp -d /tmp/sb-bootstrap.XXXXXX)
   trap 'rm -rf "$bootstrap_root"' EXIT HUP INT TERM
-  bootstrap_base=https://github.com/Promiscuity1/sing-box-multi-protocol-installer/releases/latest/download
+  bootstrap_base=https://github.com/kukumi1/sing-box-multi-protocol-installer/releases/latest/download
 
   printf '==> Downloading the latest verified sb manager release\n'
   bootstrap_download "$bootstrap_base/sb-manager.tar.gz" "$bootstrap_root/sb-manager.tar.gz"
@@ -186,7 +186,7 @@ install_sing_box_binary() {
 
 install_packages() {
   if [ "$PLATFORM" = alpine ]; then
-    apk add --no-cache jq openssl ca-certificates curl tar util-linux libqrencode-tools
+    apk add --no-cache jq openssl ca-certificates curl tar util-linux libqrencode-tools iptables
     if apk add --no-cache sing-box; then
       return
     fi
@@ -196,7 +196,7 @@ install_packages() {
   fi
   export DEBIAN_FRONTEND=noninteractive
   apt-get update
-  apt-get install -y --no-install-recommends ca-certificates curl jq openssl tar util-linux iproute2 qrencode
+  apt-get install -y --no-install-recommends ca-certificates curl jq openssl tar util-linux iproute2 qrencode iptables procps
   install -d -m 0755 /etc/apt/keyrings
   curl -fsSL https://sing-box.app/gpg.key -o /etc/apt/keyrings/sagernet.asc
   chmod 0644 /etc/apt/keyrings/sagernet.asc
@@ -244,7 +244,7 @@ install -m 0755 "$SOURCE_DIR/sb" /usr/local/bin/sb
 for file in "$SOURCE_DIR"/lib/*.sh; do install -m 0644 "$file" "/usr/local/lib/sb-manager/${file##*/}"; done
 
 install -d -m 0750 /etc/sing-box /etc/sing-box/conf.d /etc/sing-box/certs
-install -d -m 0700 /etc/sing-box/nodes /etc/sing-box/backups
+install -d -m 0700 /etc/sing-box/nodes /etc/sing-box/backups /etc/sing-box/forwards
 install -d -m 0755 /var/lib/sing-box
 
 if [ ! -f /etc/sing-box/config.json ] || [ "$legacy_config" -eq 1 ]; then
@@ -260,7 +260,7 @@ if [ "$existing_manager" -eq 0 ]; then
   jq -n --arg server_address "$SERVER_ADDRESS" \
     '{schema:1,manager_version:"3.0.0",server_address:$server_address}' >/etc/sing-box/manager.json
 fi
-jq '.manager_version="3.1.8"' /etc/sing-box/manager.json >/etc/sing-box/manager.json.tmp
+jq '.manager_version="3.2.0"' /etc/sing-box/manager.json >/etc/sing-box/manager.json.tmp
 mv /etc/sing-box/manager.json.tmp /etc/sing-box/manager.json
 
 chmod 0640 /etc/sing-box/config.json
@@ -316,6 +316,11 @@ fi
 
 sing-box check -c /etc/sing-box/config.json -C /etc/sing-box/conf.d
 if [ "$PLATFORM" = alpine ]; then rc-service sb-sing-box restart 9>&- || rc-service sb-sing-box start 9>&-; else systemctl restart sb-sing-box 9>&-; fi
+
+if find /etc/sing-box/forwards -maxdepth 1 -type f -name '*.json' | grep -q .; then
+  /usr/local/bin/sb forward install-scheduler
+  /usr/local/bin/sb forward sync --quiet
+fi
 
 printf '\nInstallation completed. Run: sb\n'
 [ -z "$backup" ] || printf 'Legacy backup: %s\n' "$backup"

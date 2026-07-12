@@ -31,7 +31,7 @@ HTTP 类传输可以使用 sing-box 原生 TLS 或 Caddy 自动 HTTPS。Hysteria
 推荐使用一键安装命令（需要 `bash` 和 `wget`）：
 
 ```sh
-bash <(wget -qO- https://raw.githubusercontent.com/Promiscuity1/sing-box-multi-protocol-installer/main/install.sh)
+bash <(wget -qO- https://raw.githubusercontent.com/kukumi1/sing-box-multi-protocol-installer/main/install.sh)
 ```
 
 脚本会自动检测 VPS 的公网 IPv4，并将其作为默认连接地址；直接回车即可采用，也可以输入其他 IP 或域名覆盖。随后脚本会下载最新 Release、验证 SHA-256 并执行完整安装。
@@ -40,25 +40,25 @@ Alpine 如果没有 Bash：
 
 ```sh
 apk add --no-cache bash wget ca-certificates
-bash <(wget -qO- https://raw.githubusercontent.com/Promiscuity1/sing-box-multi-protocol-installer/main/install.sh)
+bash <(wget -qO- https://raw.githubusercontent.com/kukumi1/sing-box-multi-protocol-installer/main/install.sh)
 ```
 
 也可以使用无需 Bash 的非交互方式：
 
 ```sh
-wget -qO- https://raw.githubusercontent.com/Promiscuity1/sing-box-multi-protocol-installer/main/install.sh | sh
+wget -qO- https://raw.githubusercontent.com/kukumi1/sing-box-multi-protocol-installer/main/install.sh | sh
 ```
 
 使用 `curl`：
 
 ```sh
-bash <(curl -fsSL https://raw.githubusercontent.com/Promiscuity1/sing-box-multi-protocol-installer/main/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/kukumi1/sing-box-multi-protocol-installer/main/install.sh)
 ```
 
 传统 Git 安装方式仍然可用：
 
 ```sh
-git clone https://github.com/Promiscuity1/sing-box-multi-protocol-installer.git
+git clone https://github.com/kukumi1/sing-box-multi-protocol-installer.git
 cd sing-box-multi-protocol-installer
 sh install.sh --server-address 你的公网IP或域名
 ```
@@ -208,6 +208,42 @@ sb dns
 
 管理器使用独立的 `sb-sing-box` 服务，不会覆盖发行版自带的 `sing-box` 服务文件。`sb doctor` 会检查系统和 sing-box 版本、服务与配置状态、节点监听和公网映射、TCP/UDP 要求、DNS 解析及防火墙规则。
 
+## iptables 动态端口转发
+
+进入中文菜单后选择：
+
+```text
+17) iptables 动态端口转发
+```
+
+支持添加、查看、启用、禁用、删除、立即同步和状态检查。目标可以是 IPv4 或动态解析域名；管理器每 5 分钟重新解析一次，IP 发生变化时自动重建受管规则。DNS 临时失败时继续使用上一次有效 IP。
+
+命令行示例：
+
+```sh
+sb forward add \
+  --name game-forward \
+  --listen-port 30009 \
+  --target-host sn.11451.419198.xyz \
+  --target-port 30009 \
+  --protocol both
+
+sb forward list
+sb forward status
+sb forward sync
+sb forward disable game-forward
+sb forward enable game-forward
+sb forward delete game-forward
+```
+
+实现约束：
+
+- `both` 表示同时转发 TCP 和 UDP。
+- 使用独立的 `SB_DNAT`、`SB_SNAT`、`SB_FORWARD` 链，不清空其他防火墙规则。
+- 自动启用 `net.ipv4.ip_forward=1`，配置文件为 `/etc/sysctl.d/99-sb-forward.conf`。
+- Alpine 使用 OpenRC + crond；Debian/Ubuntu 使用 systemd timer。
+- 配置保存在 `/etc/sing-box/forwards/`，并包含在备份、恢复和快照中。
+- 本功能只管理服务器内部端口转发；服务商 NAT 面板中的公网端口映射仍需单独配置。
 ## BBR
 
 ```sh

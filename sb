@@ -2,7 +2,7 @@
 
 set -eu
 
-PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+PATH=${SB_PATH:-/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin}
 export PATH
 umask 077
 
@@ -18,8 +18,9 @@ LIB_DIR=${SB_LIB_DIR:-/usr/local/lib/sb-manager}
 . "$LIB_DIR/operations.sh"
 . "$LIB_DIR/output.sh"
 . "$LIB_DIR/migrate.sh"
+. "$LIB_DIR/forward.sh"
 
-VERSION=3.1.8
+VERSION=3.2.0
 
 usage() {
   cat <<'EOF'
@@ -324,7 +325,7 @@ command_restore() {
 
 command_update() {
   tmp=$(mktemp -d /tmp/sb-update.XXXXXX)
-  curl -fsSL https://github.com/Promiscuity1/sing-box-multi-protocol-installer/archive/refs/heads/main.tar.gz -o "$tmp/source.tar.gz"
+  curl -fsSL https://github.com/kukumi1/sing-box-multi-protocol-installer/archive/refs/heads/main.tar.gz -o "$tmp/source.tar.gz"
   tar -C "$tmp" -xzf "$tmp/source.tar.gz"
   source_dir=$(find "$tmp" -mindepth 1 -maxdepth 1 -type d | head -n 1)
   sh "$source_dir/install.sh" --upgrade
@@ -343,6 +344,7 @@ command_uninstall() {
   [ "$yes" -eq 1 ] || confirm 'Uninstall sb manager?' || return 0
   service_active && service_stop || true
   service_enabled && service_disable || true
+  forward_uninstall
   if [ "$SB_PLATFORM" = alpine ]; then rm -f /etc/init.d/sb-sing-box; else rm -f /etc/systemd/system/sb-sing-box.service; systemctl daemon-reload; fi
   rm -f /usr/local/bin/sb
   rm -rf "$SB_RUNTIME_DIR"
@@ -437,6 +439,77 @@ interactive_select_node() {
   return 0
 }
 
+interactive_select_forward() {
+  menu_forward_names=$(forward_list_names)
+  if [ -z "$menu_forward_names" ]; then
+    warn '当前没有端口转发规则'
+    return 1
+  fi
+  say ''
+  say '请选择端口转发规则：'
+  menu_forward_index=1
+  for menu_forward_name in $menu_forward_names; do
+    menu_forward_file=$(forward_config_file "$menu_forward_name")
+    menu_forward_listen=$(jq -r '.listen_port' "$menu_forward_file")
+    menu_forward_target=$(jq -r '.target.host+":"+(.target.port|tostring)' "$menu_forward_file")
+    menu_forward_protocol=$(jq -r '.protocols|join("+")' "$menu_forward_file")
+    printf '%s) %s  [%s]  %s -> %s\n' "$menu_forward_index" "$menu_forward_name" "$menu_forward_protocol" "$menu_forward_listen" "$menu_forward_target"
+    menu_forward_index=$((menu_forward_index + 1))
+  done
+  say '0) 返回'
+  printf '请输入规则序号: '
+  read -r menu_forward_selection
+  [ "$menu_forward_selection" != 0 ] || return 1
+  case "$menu_forward_selection" in ''|*[!0-9]*) warn '无效的规则序号'; return 1 ;; esac
+  menu_forward_index=1
+  menu_selected_forward=
+  for menu_forward_name in $menu_forward_names; do
+    if [ "$menu_forward_index" -eq "$menu_forward_selection" ]; then menu_selected_forward=$menu_forward_name; break; fi
+    menu_forward_index=$((menu_forward_index + 1))
+  done
+  [ -n "$menu_selected_forward" ] || { warn '规则序号不存在'; return 1; }
+}
+
+interactive_forward_menu() {
+  while :; do
+    cat <<'EOF'
+
+iptables 动态端口转发
+1) 添加转发规则
+2) 查看转发规则
+3) 启用转发规则
+4) 禁用转发规则
+5) 删除转发规则
+6) 立即解析域名并同步
+7) 查看 iptables 规则状态
+0) 返回主菜单
+EOF
+    printf '请输入选项编号: '
+    read -r forward_choice
+    case "$forward_choice" in
+      1)
+        printf '规则名称（留空自动生成）: '; read -r forward_name
+        printf '本机内部监听端口: '; read -r forward_listen
+        printf '目标域名或 IPv4: '; read -r forward_host
+        printf '目标端口（留空与本机端口相同）: '; read -r forward_target
+        printf '协议 tcp/udp/both（留空默认 both）: '; read -r forward_protocol
+        set -- --listen-port "$forward_listen" --target-host "$forward_host" --protocol "${forward_protocol:-both}"
+        [ -z "$forward_name" ] || set -- "$@" --name "$forward_name"
+        [ -z "$forward_target" ] || set -- "$@" --target-port "$forward_target"
+        command_forward add "$@"
+        ;;
+      2) command_forward list ;;
+      3) if interactive_select_forward; then command_forward enable "$menu_selected_forward"; fi ;;
+      4) if interactive_select_forward; then command_forward disable "$menu_selected_forward"; fi ;;
+      5) if interactive_select_forward && confirm "确定删除转发规则 $menu_selected_forward 吗？"; then command_forward delete "$menu_selected_forward"; fi ;;
+      6) command_forward sync ;;
+      7) command_forward status ;;
+      0) return 0 ;;
+      *) warn '无效的选项，请重新输入' ;;
+    esac
+  done
+}
+
 interactive_menu() {
   while :; do
     cat <<'EOF'
@@ -458,6 +531,7 @@ sb 中文管理菜单
 14) 恢复备份
 15) 更新管理器
 16) 系统诊断
+17) iptables 动态端口转发
 0) 退出
 EOF
     printf '请输入选项编号: '
@@ -488,6 +562,7 @@ EOF
       14) printf '请输入备份文件完整路径: '; read -r archive; command_restore "$archive" ;;
       15) command_update manager ;;
       16) command_doctor ;;
+      17) interactive_forward_menu ;;
       0) return 0 ;;
       *) warn '无效的选项，请重新输入' ;;
     esac
@@ -502,13 +577,17 @@ require_root
 require_command jq
 require_command sing-box
 detect_platform
-acquire_lock
+case "${1:-}:${2:-}" in
+  forward:sync|forward:install-scheduler) ;;
+  *) acquire_lock ;;
+esac
 
 [ "$#" -gt 0 ] || { interactive_menu; exit 0; }
 command=$1
 shift
 case "$command" in
   add) command_add "$@" ;;
+  forward) command_forward "$@" ;;
   migrate) command_migrate "$@" ;;
   enable) command_enable "$@" ;;
   disable) command_disable "$@" ;;

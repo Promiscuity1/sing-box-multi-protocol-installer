@@ -8,7 +8,7 @@ command_backup() {
   install -d -m 0700 "$mb_root/release"
   cp "$SB_BASE_CONFIG" "$mb_root/release/config.json"
   cp "$SB_MANAGER_CONFIG" "$mb_root/manager.json"
-  cp -R "$SB_CONF_DIR" "$SB_NODE_DIR" "$SB_CERT_DIR" "$mb_root/release/"
+  cp -R "$SB_CONF_DIR" "$SB_NODE_DIR" "$SB_CERT_DIR" "$SB_FORWARD_DIR" "$mb_root/release/"
   jq -n --arg created_at "$(timestamp)" --arg manager_version "$VERSION" \
     --arg core_version "$(sing-box version | awk 'NR==1{print $3}')" \
     --argjson service_active "$(service_active && printf true || printf false)" \
@@ -39,17 +39,19 @@ command_restore() {
   sing-box check -c "$mr_root/release/config.json" -C "$mr_root/release/conf.d"
   mr_snapshot="before-restore-$(timestamp)-$$"
   command_snapshot "$mr_snapshot"
-  rm -rf "$SB_CONF_DIR" "$SB_NODE_DIR" "$SB_CERT_DIR"
+  rm -rf "$SB_CONF_DIR" "$SB_NODE_DIR" "$SB_CERT_DIR" "$SB_FORWARD_DIR"
   cp "$mr_root/release/config.json" "$SB_BASE_CONFIG"
   cp "$mr_root/manager.json" "$SB_MANAGER_CONFIG"
   cp -R "$mr_root/release/conf.d" "$SB_CONF_DIR"
   cp -R "$mr_root/release/nodes" "$SB_NODE_DIR"
   cp -R "$mr_root/release/certs" "$SB_CERT_DIR"
-  if ! restart_and_verify; then
+  if [ -d "$mr_root/release/forwards" ]; then cp -R "$mr_root/release/forwards" "$SB_FORWARD_DIR"; else install -d -m 0700 "$SB_FORWARD_DIR"; fi
+  if ! restart_and_verify || ! command_forward_sync --quiet; then
     command_rollback_release "$mr_snapshot" || true
     rm -rf "$mr_work"
     die 'restored configuration failed to start; previous release restored'
   fi
+  if [ -n "$(forward_list_names)" ]; then forward_install_scheduler; else forward_remove_scheduler; fi
   rm -rf "$mr_work"
   info '备份恢复完成。'
 }
@@ -59,7 +61,7 @@ command_update() {
   case "$mu_kind" in
     manager)
       mu_work=$(mktemp -d /tmp/sb-manager-update.XXXXXX)
-      mu_api=https://api.github.com/repos/Promiscuity1/sing-box-multi-protocol-installer/releases/latest
+      mu_api=https://api.github.com/repos/kukumi1/sing-box-multi-protocol-installer/releases/latest
       curl -fsSL "$mu_api" -o "$mu_work/release.json"
       mu_archive_url=$(jq -r '.assets[] | select(.name=="sb-manager.tar.gz") | .browser_download_url' "$mu_work/release.json")
       mu_checksum_url=$(jq -r '.assets[] | select(.name=="sb-manager.tar.gz.sha256") | .browser_download_url' "$mu_work/release.json")
