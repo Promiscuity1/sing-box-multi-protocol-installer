@@ -28,30 +28,42 @@ HTTP 类传输可以使用 sing-box 原生 TLS 或 Caddy 自动 HTTPS。Hysteria
 
 ## 安装
 
-Alpine：
+推荐使用一键安装命令（需要 `bash` 和 `wget`）：
 
 ```sh
-apk update
-apk add --no-cache git curl ca-certificates
+bash <(wget -qO- https://raw.githubusercontent.com/Promiscuity1/sing-box-multi-protocol-installer/main/install.sh)
+```
+
+运行后按提示输入客户端实际连接使用的公网 IP 或域名。脚本会自动下载最新 Release、验证 SHA-256，然后执行完整安装。
+
+Alpine 如果没有 Bash：
+
+```sh
+apk add --no-cache bash wget ca-certificates
+bash <(wget -qO- https://raw.githubusercontent.com/Promiscuity1/sing-box-multi-protocol-installer/main/install.sh)
+```
+
+也可以使用无需 Bash 的非交互方式：
+
+```sh
+wget -qO- https://raw.githubusercontent.com/Promiscuity1/sing-box-multi-protocol-installer/main/install.sh | sh -s -- --server-address 你的公网IP或域名
+```
+
+使用 `curl`：
+
+```sh
+bash <(curl -fsSL https://raw.githubusercontent.com/Promiscuity1/sing-box-multi-protocol-installer/main/install.sh)
+```
+
+传统 Git 安装方式仍然可用：
+
+```sh
 git clone https://github.com/Promiscuity1/sing-box-multi-protocol-installer.git
 cd sing-box-multi-protocol-installer
 sh install.sh --server-address 你的公网IP或域名
-sb
 ```
 
-Debian/Ubuntu：
-
-```sh
-apt update
-apt install -y git curl ca-certificates
-git clone https://github.com/Promiscuity1/sing-box-multi-protocol-installer.git
-cd sing-box-multi-protocol-installer
-sudo sh install.sh --server-address 你的公网IP或域名
-sudo sb
-```
-
-如果当前终端已经是 `root`，不要加 `sudo`。请把“你的公网IP或域名”替换为客户端实际连接的地址，不要照抄占位文字。安装器会在修改软件包前检查已有的非托管配置；只有确认自动备份无误后才应使用 `--force`。
-
+如果当前终端已经是 `root`，不要加 `sudo`。不要原样填写“你的公网IP或域名”。安装器会在修改软件包前检查已有的非托管配置；只有确认自动备份无误后才应使用 `--force`。
 ## NAT 机器示例
 
 假设服务商端口映射为：

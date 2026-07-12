@@ -12,6 +12,61 @@ FORCE=0
 DRY_RUN=0
 SOURCE_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
+bootstrap_download() {
+  bootstrap_url=$1
+  bootstrap_output=$2
+  if command -v curl >/dev/null 2>&1; then
+    curl -fL --retry 3 --connect-timeout 15 "$bootstrap_url" -o "$bootstrap_output"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -O "$bootstrap_output" "$bootstrap_url"
+  else
+    printf 'Error: curl or wget is required for one-command installation\n' >&2
+    exit 1
+  fi
+}
+
+bootstrap_if_needed() {
+  [ -f "$SOURCE_DIR/sb" ] && [ -d "$SOURCE_DIR/lib" ] && return 0
+
+  bootstrap_root=$(mktemp -d /tmp/sb-bootstrap.XXXXXX)
+  trap 'rm -rf "$bootstrap_root"' EXIT HUP INT TERM
+  bootstrap_base=https://github.com/Promiscuity1/sing-box-multi-protocol-installer/releases/latest/download
+
+  printf '==> Downloading the latest verified sb manager release\n'
+  bootstrap_download "$bootstrap_base/sb-manager.tar.gz" "$bootstrap_root/sb-manager.tar.gz"
+  bootstrap_download "$bootstrap_base/sb-manager.tar.gz.sha256" "$bootstrap_root/sb-manager.tar.gz.sha256"
+  (cd "$bootstrap_root" && sha256sum -c sb-manager.tar.gz.sha256) || {
+    printf 'Error: release checksum verification failed\n' >&2
+    exit 1
+  }
+
+  tar -xzf "$bootstrap_root/sb-manager.tar.gz" -C "$bootstrap_root"
+  bootstrap_installer=$(find "$bootstrap_root" -mindepth 2 -maxdepth 2 -type f -name install.sh | head -n 1)
+  [ -n "$bootstrap_installer" ] || {
+    printf 'Error: install.sh was not found in the release archive\n' >&2
+    exit 1
+  }
+
+  if [ "$#" -eq 0 ]; then
+    [ -r /dev/tty ] || {
+      printf 'Error: use --server-address when running without an interactive terminal\n' >&2
+      exit 1
+    }
+    printf '请输入客户端连接使用的公网 IP 或域名: ' >/dev/tty
+    IFS= read -r bootstrap_server_address </dev/tty
+    [ -n "$bootstrap_server_address" ] || {
+      printf 'Error: server address cannot be empty\n' >&2
+      exit 1
+    }
+    set -- --server-address "$bootstrap_server_address"
+  fi
+
+  sh "$bootstrap_installer" "$@"
+  exit $?
+}
+
+bootstrap_if_needed "$@"
+
 usage() {
   cat <<'EOF'
 Usage: install.sh --server-address PUBLIC_ADDRESS [--force] [--dry-run]
