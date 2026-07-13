@@ -20,7 +20,7 @@ LIB_DIR=${SB_LIB_DIR:-/usr/local/lib/sb-manager}
 . "$LIB_DIR/migrate.sh"
 . "$LIB_DIR/forward.sh"
 
-VERSION=3.2.1
+VERSION=3.3.0
 
 usage() {
   cat <<'EOF'
@@ -43,6 +43,12 @@ Maintenance:
   sb restore ARCHIVE
   sb update
   sb uninstall [--purge] [--remove-core] [--yes]
+
+Port forwarding:
+  sb forward add [options]
+  sb forward change NAME [--listen-port PORT] [--target-host HOST]
+                         [--target-port PORT] [--protocol tcp|udp|both]
+  sb forward list | sync | enable NAME | disable NAME | delete NAME
 
 NAT example:
   sb add anytls --name tw --listen-port 30009 \
@@ -477,11 +483,12 @@ interactive_forward_menu() {
 iptables 动态端口转发
 1) 添加转发规则
 2) 查看转发规则
-3) 启用转发规则
-4) 禁用转发规则
-5) 删除转发规则
-6) 立即解析域名并同步
-7) 查看 iptables 规则状态
+3) 修改转发规则
+4) 启用转发规则
+5) 禁用转发规则
+6) 删除转发规则
+7) 立即解析域名并同步
+8) 查看 iptables 规则状态
 0) 返回主菜单
 EOF
     printf '请输入选项编号: '
@@ -499,11 +506,31 @@ EOF
         command_forward add "$@"
         ;;
       2) command_forward list ;;
-      3) if interactive_select_forward; then command_forward enable "$menu_selected_forward"; fi ;;
-      4) if interactive_select_forward; then command_forward disable "$menu_selected_forward"; fi ;;
-      5) if interactive_select_forward && confirm "确定删除转发规则 $menu_selected_forward 吗？"; then command_forward delete "$menu_selected_forward"; fi ;;
-      6) command_forward sync ;;
-      7) command_forward status ;;
+      3)
+        if interactive_select_forward; then
+          forward_edit_file=$(forward_config_file "$menu_selected_forward")
+          forward_edit_listen=$(jq -r '.listen_port' "$forward_edit_file")
+          forward_edit_host=$(jq -r '.target.host' "$forward_edit_file")
+          forward_edit_target=$(jq -r '.target.port' "$forward_edit_file")
+          forward_edit_protocol=$(jq -r 'if (.protocols | length) == 2 then "both" else .protocols[0] end' "$forward_edit_file")
+          printf '新的本机内部监听端口（当前 %s，留空不修改）: ' "$forward_edit_listen"; read -r forward_listen
+          printf '新的目标域名或 IPv4（当前 %s，留空不修改）: ' "$forward_edit_host"; read -r forward_host
+          printf '新的目标端口（当前 %s，留空不修改）: ' "$forward_edit_target"; read -r forward_target
+          printf '新的协议 tcp/udp/both（当前 %s，留空不修改）: ' "$forward_edit_protocol"; read -r forward_protocol
+          set -- "$menu_selected_forward"
+          forward_edit_requested=0
+          if [ -n "$forward_listen" ]; then set -- "$@" --listen-port "$forward_listen"; forward_edit_requested=1; fi
+          if [ -n "$forward_host" ]; then set -- "$@" --target-host "$forward_host"; forward_edit_requested=1; fi
+          if [ -n "$forward_target" ]; then set -- "$@" --target-port "$forward_target"; forward_edit_requested=1; fi
+          if [ -n "$forward_protocol" ]; then set -- "$@" --protocol "$forward_protocol"; forward_edit_requested=1; fi
+          if [ "$forward_edit_requested" -eq 1 ]; then command_forward change "$@"; else info '未修改转发规则'; fi
+        fi
+        ;;
+      4) if interactive_select_forward; then command_forward enable "$menu_selected_forward"; fi ;;
+      5) if interactive_select_forward; then command_forward disable "$menu_selected_forward"; fi ;;
+      6) if interactive_select_forward && confirm "确定删除转发规则 $menu_selected_forward 吗？"; then command_forward delete "$menu_selected_forward"; fi ;;
+      7) command_forward sync ;;
+      8) command_forward status ;;
       0) return 0 ;;
       *) warn '无效的选项，请重新输入' ;;
     esac

@@ -216,7 +216,9 @@ sb dns
 17) iptables 动态端口转发
 ```
 
-支持添加、查看、启用、禁用、删除、立即同步和状态检查。目标可以是 IPv4 或动态解析域名；管理器每 5 分钟重新解析一次，IP 发生变化时自动重建受管规则。DNS 临时失败时继续使用上一次有效 IP。
+支持添加、查看、修改、启用、禁用、删除、立即同步和状态检查。目标可以是 IPv4 或动态解析域名；管理器每 5 分钟重新解析一次，IP 发生变化时自动重建受管规则。DNS 临时失败时继续使用上一次有效 IP。
+
+现有规则可以直接修改本机端口、目标域名/IP、目标端口和协议，无需删除后重新创建。交互菜单选择“修改转发规则”后，留空的项目保持原值。
 
 命令行示例：
 
@@ -229,6 +231,11 @@ sb forward add \
   --protocol both
 
 sb forward list
+sb forward change game-forward \
+  --listen-port 30010 \
+  --target-host new.example.com \
+  --target-port 30010 \
+  --protocol both
 sb forward status
 sb forward sync
 sb forward disable game-forward

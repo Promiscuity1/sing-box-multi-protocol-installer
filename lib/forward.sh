@@ -160,32 +160,34 @@ forward_clear_rules() {
   iptables -X "$SB_FORWARD_CHAIN_FILTER" 2>/dev/null || true
 }
 
-forward_release_sync_lock() {
-  flock -u 8 2>/dev/null || true
-  exec 8>&-
-}
-
-command_forward_sync() {
+forward_require_sync_commands() {
   require_command iptables
   require_command iptables-save
   require_command iptables-restore
   require_command sysctl
   require_command getent
-  fw_quiet=0
-  [ "${1:-}" != --quiet ] || fw_quiet=1
+  require_command flock
+}
+
+forward_acquire_sync_lock() {
   install -d -m 0755 /run/lock
   exec 8>"$SB_FORWARD_SYNC_LOCK"
-  if ! flock -n 8; then
-    exec 8>&-
-    [ "$fw_quiet" -eq 1 ] && return 0
-    warn '另一个端口转发同步任务正在运行'
-    return 1
-  fi
+  flock -n 8 && return 0
+  exec 8>&-
+  return 1
+}
 
-  install -d -m 0700 "$SB_FORWARD_DIR"
-  fw_work=$(mktemp -d /tmp/sb-forward-sync.XXXXXX)
+forward_release_sync_lock() {
+  flock -u 8 2>/dev/null || true
+  exec 8>&-
+}
+
+forward_sync_locked() {
+  fw_quiet=$1
+  install -d -m 0700 "$SB_FORWARD_DIR" || { warn '无法创建端口转发配置目录'; return 1; }
+  fw_work=$(mktemp -d /tmp/sb-forward-sync.XXXXXX) || { warn '无法创建端口转发同步临时目录'; return 1; }
   fw_plan=$fw_work/plan
-  : >"$fw_plan"
+  : >"$fw_plan" || { rm -rf "$fw_work"; warn '无法创建端口转发同步计划'; return 1; }
   for fw_config in "$SB_FORWARD_DIR"/*.json; do
     [ -f "$fw_config" ] || continue
     [ "$(jq -r 'if has("enabled") then .enabled else true end' "$fw_config")" != false ] || continue
@@ -193,31 +195,57 @@ command_forward_sync() {
     fw_ip=$(forward_resolve_ipv4 "$fw_host" || true)
     if [ -z "$fw_ip" ]; then
       fw_ip=$(jq -r '.resolved_ip // empty' "$fw_config")
-      [ -n "$fw_ip" ] || { warn "无法解析目标域名且没有历史 IP: $fw_host"; rm -rf "$fw_work"; forward_release_sync_lock; return 1; }
+      [ -n "$fw_ip" ] || { warn "无法解析目标域名且没有历史 IP: $fw_host"; rm -rf "$fw_work"; return 1; }
       [ "$fw_quiet" -eq 1 ] || warn "DNS 解析失败，继续使用上次 IP: $fw_host -> $fw_ip"
     fi
-    printf '%s|%s\n' "$fw_config" "$fw_ip" >>"$fw_plan"
+    printf '%s|%s\n' "$fw_config" "$fw_ip" >>"$fw_plan" || { rm -rf "$fw_work"; warn '无法写入端口转发同步计划'; return 1; }
   done
 
   fw_backup=$fw_work/iptables.save
-  iptables-save >"$fw_backup" || { rm -rf "$fw_work"; warn '无法备份当前 iptables 规则'; forward_release_sync_lock; return 1; }
-  forward_enable_kernel || { rm -rf "$fw_work"; warn '无法启用 IPv4 转发'; forward_release_sync_lock; return 1; }
+  iptables-save >"$fw_backup" || { rm -rf "$fw_work"; warn '无法备份当前 iptables 规则'; return 1; }
+  forward_enable_kernel || { rm -rf "$fw_work"; warn '无法启用 IPv4 转发'; return 1; }
   if ! forward_apply_plan "$fw_plan"; then
     iptables-restore <"$fw_backup" || true
     rm -rf "$fw_work"
     warn '应用端口转发规则失败，已恢复原防火墙状态'
-    forward_release_sync_lock
     return 1
   fi
 
   while IFS='|' read -r fw_config fw_ip; do
     [ -n "$fw_config" ] || continue
-    jq --arg ip "$fw_ip" --arg updated "$(timestamp)" '.resolved_ip=$ip | .updated_at=$updated' "$fw_config" >"$fw_config.tmp"
-    mv "$fw_config.tmp" "$fw_config"
+    if ! jq --arg ip "$fw_ip" --arg updated "$(timestamp)" '.resolved_ip=$ip | .updated_at=$updated' "$fw_config" >"$fw_config.tmp"; then
+      rm -f "$fw_config.tmp"
+      iptables-restore <"$fw_backup" || true
+      rm -rf "$fw_work"
+      warn '无法保存域名解析结果，已恢复原防火墙状态'
+      return 1
+    fi
+    if ! mv "$fw_config.tmp" "$fw_config"; then
+      rm -f "$fw_config.tmp"
+      iptables-restore <"$fw_backup" || true
+      rm -rf "$fw_work"
+      warn '无法更新端口转发配置，已恢复原防火墙状态'
+      return 1
+    fi
   done <"$fw_plan"
   rm -rf "$fw_work"
-  forward_release_sync_lock
   [ "$fw_quiet" -eq 1 ] || info '端口转发规则已同步'
+  return 0
+}
+
+command_forward_sync() {
+  forward_require_sync_commands
+  fw_quiet=0
+  [ "${1:-}" != --quiet ] || fw_quiet=1
+  if ! forward_acquire_sync_lock; then
+    [ "$fw_quiet" -eq 1 ] && return 0
+    warn '另一个端口转发同步任务正在运行'
+    return 1
+  fi
+  fw_sync_status=0
+  forward_sync_locked "$fw_quiet" || fw_sync_status=$?
+  forward_release_sync_lock
+  return "$fw_sync_status"
 }
 
 command_forward_add() {
@@ -255,6 +283,83 @@ command_forward_add() {
   if ! command_forward_sync; then rm -f "$fw_file"; return 1; fi
   forward_install_scheduler
   info "端口转发已添加: $fw_name"
+}
+
+command_forward_change() {
+  [ "$#" -ge 1 ] || die '必须指定转发规则名称'
+  fw_change_name=$1
+  shift
+  fw_change_file=$(forward_config_file "$fw_change_name")
+  [ -f "$fw_change_file" ] || die "转发规则不存在: $fw_change_name"
+
+  fw_change_listen=$(jq -r '.listen_port' "$fw_change_file")
+  fw_change_host=$(jq -r '.target.host' "$fw_change_file")
+  fw_change_target=$(jq -r '.target.port' "$fw_change_file")
+  fw_change_protocol=$(jq -r 'if (.protocols | length) == 2 then "both" else .protocols[0] end' "$fw_change_file")
+  fw_change_requested=0
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --listen-port|--port) [ "$#" -ge 2 ] || die '--listen-port 需要参数'; fw_change_listen=$2; fw_change_requested=1; shift 2 ;;
+      --target-host) [ "$#" -ge 2 ] || die '--target-host 需要参数'; fw_change_host=$2; fw_change_requested=1; shift 2 ;;
+      --target-port) [ "$#" -ge 2 ] || die '--target-port 需要参数'; fw_change_target=$2; fw_change_requested=1; shift 2 ;;
+      --protocol) [ "$#" -ge 2 ] || die '--protocol 需要参数'; fw_change_protocol=$2; fw_change_requested=1; shift 2 ;;
+      *) die "未知的端口转发参数: $1" ;;
+    esac
+  done
+  [ "$fw_change_requested" -eq 1 ] || die '至少指定一项要修改的转发参数'
+  validate_port "$fw_change_listen" || die '本机监听端口无效'
+  validate_port "$fw_change_target" || die '目标端口无效'
+  validate_host "$fw_change_host" || die '目标域名或 IP 无效'
+  fw_change_protocols=$(forward_protocols_json "$fw_change_protocol") || die '协议必须是 tcp、udp 或 both'
+  port_in_metadata "$fw_change_listen" '' && die "该端口已被 sing-box 节点使用: $fw_change_listen"
+  for fw_change_check_protocol in $(printf '%s' "$fw_change_protocols" | jq -r '.[]'); do
+    forward_port_conflicts "$fw_change_listen" "$fw_change_check_protocol" "$fw_change_name" && die "该端口和协议已有转发规则: $fw_change_listen/$fw_change_check_protocol"
+  done
+
+  install -d -m 0700 "$SB_FORWARD_DIR"
+  fw_change_candidate=$(mktemp "$SB_FORWARD_DIR/.${fw_change_name}.edit.XXXXXX")
+  fw_change_backup=$(mktemp /tmp/sb-forward-change.XXXXXX)
+  cp "$fw_change_file" "$fw_change_backup"
+  jq --argjson listen "$fw_change_listen" --arg host "$fw_change_host" --argjson target "$fw_change_target" --argjson protocols "$fw_change_protocols" --arg updated "$(timestamp)" '
+      (if .target.host == $host then . else .resolved_ip = "" end)
+      | .listen_port = $listen
+      | .target.host = $host
+      | .target.port = $target
+      | .protocols = $protocols
+      | .updated_at = $updated
+    ' "$fw_change_file" >"$fw_change_candidate"
+  chmod 0600 "$fw_change_candidate"
+
+  forward_require_sync_commands
+  if ! forward_acquire_sync_lock; then
+    rm -f "$fw_change_candidate" "$fw_change_backup"
+    die '另一个端口转发同步任务正在运行，请稍后重试'
+  fi
+  if ! mv "$fw_change_candidate" "$fw_change_file"; then
+    rm -f "$fw_change_candidate" "$fw_change_backup"
+    forward_release_sync_lock
+    warn '无法保存修改后的转发规则'
+    return 1
+  fi
+
+  if forward_sync_locked 0; then
+    rm -f "$fw_change_backup"
+    forward_release_sync_lock
+    info "端口转发已修改: $fw_change_name"
+    return 0
+  fi
+
+  fw_change_restore=$(mktemp "$SB_FORWARD_DIR/.${fw_change_name}.rollback.XXXXXX")
+  cp "$fw_change_backup" "$fw_change_restore"
+  chmod 0600 "$fw_change_restore"
+  mv "$fw_change_restore" "$fw_change_file"
+  if ! forward_sync_locked 1; then
+    warn '旧配置已恢复，但重新同步旧 iptables 规则失败，请立即运行 sb forward sync'
+  fi
+  rm -f "$fw_change_backup"
+  forward_release_sync_lock
+  warn "修改失败，已恢复原转发规则: $fw_change_name"
+  return 1
 }
 
 command_forward_list() {
@@ -303,6 +408,7 @@ command_forward() {
   fw_action=${1:-list}; [ "$#" -eq 0 ] || shift
   case "$fw_action" in
     add) command_forward_add "$@" ;;
+    change|edit) command_forward_change "$@" ;;
     list|ls) command_forward_list ;;
     sync) command_forward_sync "$@" ;;
     enable) [ "$#" -eq 1 ] || die '必须指定转发规则名称'; command_forward_set_enabled true "$1" ;;
@@ -310,7 +416,7 @@ command_forward() {
     delete|del) command_forward_delete "$@" ;;
     status) command_forward_status ;;
     install-scheduler) forward_install_scheduler ;;
-    *) die '用法: sb forward add|list|sync|enable|disable|delete|status' ;;
+    *) die '用法: sb forward add|change|list|sync|enable|disable|delete|status' ;;
   esac
 }
 
