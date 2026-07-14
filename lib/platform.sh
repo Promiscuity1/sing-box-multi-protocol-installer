@@ -2,9 +2,12 @@
 
 detect_platform() {
   [ -r /etc/os-release ] || die 'cannot identify operating system'
-  # shellcheck disable=SC1091
-  . /etc/os-release
-  case "${ID:-}" in
+  sb_os_id=$(
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    printf '%s' "${ID:-}"
+  )
+  case "$sb_os_id" in
     alpine) SB_PLATFORM=alpine ;;
     debian|ubuntu) SB_PLATFORM=systemd ;;
     *) die 'supported systems: Alpine, Debian, Ubuntu' ;;
