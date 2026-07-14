@@ -4,6 +4,8 @@ set -eu
 mock_dir=$(mktemp -d)
 trap 'rm -rf "$mock_dir"' EXIT INT TERM
 cp /bin/true "$mock_dir/systemctl"
+apt-get update
+apt-get install -y --no-install-recommends systemd
 
 PATH="$mock_dir:$PATH" sh ./install.sh --server-address 203.0.113.10
 
