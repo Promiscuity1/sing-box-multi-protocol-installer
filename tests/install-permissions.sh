@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-mock_dir=$(mktemp -d)
+mock_dir=$(mktemp -d /root/sb-systemctl.XXXXXX)
 trap 'rm -rf "$mock_dir"' EXIT INT TERM
 cp /bin/true "$mock_dir/systemctl"
 apt-get update
