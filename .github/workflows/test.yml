@@ -51,6 +51,18 @@ jobs:
               sh tests/forward.sh
             '
 
+  install-permissions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Debian service account can read managed configuration
+        run: |
+          docker run --rm \
+            -v "$PWD:/work:ro" \
+            -w /work \
+            debian:bookworm-slim \
+            sh tests/install-permissions.sh
+
   shellcheck:
     runs-on: ubuntu-latest
     steps:

@@ -260,13 +260,15 @@ if [ "$existing_manager" -eq 0 ]; then
   jq -n --arg server_address "$SERVER_ADDRESS" \
     '{schema:1,manager_version:"3.0.0",server_address:$server_address}' >/etc/sing-box/manager.json
 fi
-jq '.manager_version="3.3.0"' /etc/sing-box/manager.json >/etc/sing-box/manager.json.tmp
+jq '.manager_version="3.3.1"' /etc/sing-box/manager.json >/etc/sing-box/manager.json.tmp
 mv /etc/sing-box/manager.json.tmp /etc/sing-box/manager.json
 
 chmod 0640 /etc/sing-box/config.json
 chmod 0600 /etc/sing-box/manager.json
 
 if getent group sing-box >/dev/null 2>&1; then
+  # The systemd service runs as sing-box, so it must traverse this directory.
+  chown root:sing-box /etc/sing-box
   chown root:sing-box /etc/sing-box/config.json
   chown -R root:sing-box /etc/sing-box/conf.d /etc/sing-box/certs
 fi
