@@ -20,7 +20,7 @@ LIB_DIR=${SB_LIB_DIR:-/usr/local/lib/sb-manager}
 . "$LIB_DIR/migrate.sh"
 . "$LIB_DIR/forward.sh"
 
-VERSION=3.3.3
+VERSION=3.3.4
 
 usage() {
   cat <<'EOF'
@@ -28,7 +28,7 @@ Usage: sb COMMAND [arguments]
 
 Node commands:
   sb add <anytls|ss2022|vless-reality|socks5> [options]
-  sb change NAME [--listen-port PORT] [--public-address HOST] [--public-port PORT]
+  sb change NAME [--listen-port PORT] [--public-address HOST] [--public-port PORT] [--username USER] [--password PASS]
   sb list
   sb info NAME
   sb url NAME
@@ -400,12 +400,22 @@ EOF
   read -r menu_public_address
   printf 'NAT 映射后的公网端口（留空则与内部端口相同）: '
   read -r menu_public_port
+  menu_username=
+  menu_password=
+  if [ "$menu_protocol" = socks5 ]; then
+    printf 'SOCKS5 用户名（留空使用 default）: '
+    read -r menu_username
+    printf 'SOCKS5 密码（留空自动生成）: '
+    read -r menu_password
+  fi
 
   set -- "$menu_protocol"
   [ -z "$menu_name" ] || set -- "$@" --name "$menu_name"
   [ -z "$menu_listen_port" ] || set -- "$@" --listen-port "$menu_listen_port"
   [ -z "$menu_public_address" ] || set -- "$@" --public-address "$menu_public_address"
   [ -z "$menu_public_port" ] || set -- "$@" --public-port "$menu_public_port"
+  [ -z "$menu_username" ] || set -- "$@" --username "$menu_username"
+  [ -z "$menu_password" ] || set -- "$@" --password "$menu_password"
   command_add "$@"
 }
 
@@ -547,7 +557,7 @@ sb 中文管理菜单
 3) 查看节点详细信息
 4) 获取节点导入链接
 5) 显示节点二维码
-6) 修改节点地址或端口
+6) 修改节点设置
 7) 启用节点
 8) 禁用节点
 9) 重新生成节点密码或密钥
@@ -572,11 +582,20 @@ EOF
       6)
         interactive_select_node || continue
         name=$menu_selected_node
+        protocol=$(jq -r '.protocol' "$(node_meta_file "$name")")
         printf '新的公网 IP 或域名（留空则不修改）: '; read -r address
         printf '新的公网端口（留空则不修改）: '; read -r port
+        username=
+        password=
+        if [ "$protocol" = socks5 ]; then
+          printf '新的 SOCKS5 用户名（留空则不修改）: '; read -r username
+          printf '新的 SOCKS5 密码（留空则不修改）: '; read -r password
+        fi
         set -- "$name"
         [ -z "$address" ] || set -- "$@" --public-address "$address"
         [ -z "$port" ] || set -- "$@" --public-port "$port"
+        [ -z "$username" ] || set -- "$@" --username "$username"
+        [ -z "$password" ] || set -- "$@" --password "$password"
         command_change "$@"
         ;;
       7) if interactive_select_node; then command_enable "$menu_selected_node"; fi ;;
