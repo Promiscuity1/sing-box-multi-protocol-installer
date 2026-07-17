@@ -48,6 +48,7 @@ jobs:
               apk add --no-cache sing-box jq openssl coreutils util-linux
               sh tests/render.sh
               sh tests/render-extended.sh
+              sh tests/alpine-migration.sh
               sh tests/lock-fd.sh
               sh tests/forward.sh
               sh tests/forward-socat.sh

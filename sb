@@ -20,7 +20,7 @@ LIB_DIR=${SB_LIB_DIR:-/usr/local/lib/sb-manager}
 . "$LIB_DIR/migrate.sh"
 . "$LIB_DIR/forward.sh"
 
-VERSION=3.3.5
+VERSION=3.3.6
 
 usage() {
   cat <<'EOF'

@@ -18,7 +18,7 @@ install -d -m 0755 "$SB_CONF_DIR" "$SB_CERT_DIR"
 install -d -m 0700 "$SB_NODE_DIR"
 
 cat >"$SB_BASE_CONFIG" <<'EOF'
-{"log":{"level":"error"},"outbounds":[{"type":"direct","tag":"direct"}]}
+{"log":{"level":"error"}}
 EOF
 
 create_node() {

@@ -43,7 +43,7 @@ esac
 EOF
 chmod +x "$TEST_ROOT/bin"/*
 
-printf '%s\n' '{"log":{"level":"error"},"outbounds":[{"type":"direct","tag":"direct"}]}' >"$TEST_ROOT/etc/sing-box/config.json"
+printf '%s\n' '{"log":{"level":"error"}}' >"$TEST_ROOT/etc/sing-box/config.json"
 printf '%s\n' '{"schema":1,"manager_version":"test","server_address":"203.0.113.10"}' >"$TEST_ROOT/etc/sing-box/manager.json"
 
 export PATH="$TEST_ROOT/bin:$PATH"

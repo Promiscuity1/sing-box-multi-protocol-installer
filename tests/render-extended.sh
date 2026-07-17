@@ -13,7 +13,7 @@ export SB_HOME=$TEST_ROOT/etc/sing-box
 
 install -d -m 0755 "$SB_CONF_DIR" "$SB_CERT_DIR"
 install -d -m 0700 "$SB_NODE_DIR"
-printf '%s\n' '{"log":{"level":"error"},"outbounds":[{"type":"direct","tag":"direct"}]}' >"$SB_BASE_CONFIG"
+printf '%s\n' '{"log":{"level":"error"}}' >"$SB_BASE_CONFIG"
 
 create_extended() {
   protocol=$1; name=$2; port=$3; transport=$4; tls_mode=$5

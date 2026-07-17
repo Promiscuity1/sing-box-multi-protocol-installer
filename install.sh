@@ -212,6 +212,46 @@ EOF
   apt-get install -y --no-install-recommends sing-box
 }
 
+write_base_config() {
+  cat >"$1" <<'EOF'
+{
+  "log": {
+    "level": "info",
+    "timestamp": true
+  }
+}
+EOF
+}
+
+migrate_legacy_base_config() {
+  config_path=$1
+  backup_dir=$2
+
+  [ -f "$config_path" ] || return 0
+
+  if ! jq -e '
+    (.dns.servers? == [{"address":"tls://8.8.8.8"}]) and
+    (.outbounds? == [{"type":"direct"},{"type":"dns","tag":"dns-out"}]) and
+    (.route.rules? == [{"port":53,"outbound":"dns-out"}])
+  ' "$config_path" >/dev/null; then
+    return 0
+  fi
+
+  migration_backup="$backup_dir/config-before-sing-box-1.12-migration-$(date -u +%Y%m%dT%H%M%SZ).json"
+  cp -p "$config_path" "$migration_backup"
+  chmod 0600 "$migration_backup"
+
+  info 'Migrating the legacy sing-box DNS and outbound configuration'
+  jq -f "$SOURCE_DIR/lib/sing-box-1.12-migration.jq" "$config_path" >"$config_path.tmp"
+  chmod 0640 "$config_path.tmp"
+  mv "$config_path.tmp" "$config_path"
+
+  if ! /usr/bin/sing-box check -c "$config_path" -C /etc/sing-box/conf.d >/dev/null 2>&1; then
+    cp -p "$migration_backup" "$config_path"
+    die "the sing-box 1.12 configuration migration failed; restored $migration_backup"
+  fi
+}
+
 existing_manager=0
 [ -f /etc/sing-box/manager.json ] && existing_manager=1
 legacy_config=0
@@ -248,19 +288,18 @@ install -d -m 0700 /etc/sing-box/nodes /etc/sing-box/backups /etc/sing-box/forwa
 install -d -m 0755 /var/lib/sing-box
 
 if [ ! -f /etc/sing-box/config.json ] || [ "$legacy_config" -eq 1 ]; then
-  cat >/etc/sing-box/config.json <<'EOF'
-{
-  "log": {"level": "info", "timestamp": true},
-  "outbounds": [{"type": "direct", "tag": "direct"}]
-}
-EOF
+  write_base_config /etc/sing-box/config.json
+fi
+
+if [ "$existing_manager" -eq 1 ]; then
+  migrate_legacy_base_config /etc/sing-box/config.json /etc/sing-box/backups
 fi
 
 if [ "$existing_manager" -eq 0 ]; then
   jq -n --arg server_address "$SERVER_ADDRESS" \
     '{schema:1,manager_version:"3.0.0",server_address:$server_address}' >/etc/sing-box/manager.json
 fi
-jq '.manager_version="3.3.5"' /etc/sing-box/manager.json >/etc/sing-box/manager.json.tmp
+jq '.manager_version="3.3.6"' /etc/sing-box/manager.json >/etc/sing-box/manager.json.tmp
 mv /etc/sing-box/manager.json.tmp /etc/sing-box/manager.json
 
 chmod 0640 /etc/sing-box/config.json

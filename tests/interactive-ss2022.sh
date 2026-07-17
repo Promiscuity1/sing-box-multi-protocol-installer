@@ -24,7 +24,7 @@ service_status() { :; }
 service_logs() { :; }
 EOF
 
-printf '%s\n' '{"log":{"level":"error"},"outbounds":[{"type":"direct","tag":"direct"}]}' >"$TEST_HOME/config.json"
+printf '%s\n' '{"log":{"level":"error"}}' >"$TEST_HOME/config.json"
 printf '%s\n' '{"schema":1,"manager_version":"test","server_address":"203.0.113.10"}' >"$TEST_HOME/manager.json"
 
 run_menu() {

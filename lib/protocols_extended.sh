@@ -211,5 +211,9 @@ protocol_share_uri() {
 
 protocol_default_port_all() {
   protocol_default_port "$1" 2>/dev/null && return
-  case "$1" in hysteria2|tuic|trojan|vless-tls) printf '443\n' ;; vmess) printf '10000\n' ;; *) return 1 ;; esac
+  case "$1" in
+    hysteria2|tuic|trojan|vless-tls) printf '443\n' ;;
+    vmess) printf '10000\n' ;;
+    *) return 1 ;;
+  esac
 }
