@@ -20,7 +20,121 @@ LIB_DIR=${SB_LIB_DIR:-/usr/local/lib/sb-manager}
 . "$LIB_DIR/migrate.sh"
 . "$LIB_DIR/forward.sh"
 
-VERSION=3.3.6
+VERSION=3.3.7
+
+ui_interactive_terminal() {
+  [ -t 0 ] && [ -t 1 ] && [ "${TERM:-dumb}" != dumb ]
+}
+
+ui_setup() {
+  [ "${UI_READY:-0}" = 1 ] && return 0
+  UI_READY=1
+  UI_RESET=
+  UI_CYAN=
+  UI_GREEN=
+  UI_YELLOW=
+  UI_RED=
+  UI_MUTED=
+  ui_interactive_terminal || return 0
+  UI_RESET=$(printf '\033[0m')
+  UI_CYAN=$(printf '\033[36m')
+  UI_GREEN=$(printf '\033[32m')
+  UI_YELLOW=$(printf '\033[33m')
+  UI_RED=$(printf '\033[31m')
+  UI_MUTED=$(printf '\033[2m')
+}
+
+ui_clear() {
+  ui_interactive_terminal || return 0
+  clear 2>/dev/null || printf '\033[H\033[2J'
+}
+
+ui_pause() {
+  ui_interactive_terminal || return 0
+  printf '\n%s按 Enter 返回主菜单...%s' "$UI_MUTED" "$UI_RESET"
+  read -r ui_pause_input
+}
+
+ui_system_name() {
+  if [ -r /etc/os-release ]; then
+    (
+      # shellcheck disable=SC1091
+      . /etc/os-release
+      printf '%s' "${PRETTY_NAME:-${NAME:-unknown}}"
+    )
+  else
+    uname -s
+  fi
+}
+
+ui_core_version() {
+  sing-box version 2>/dev/null | awk 'NR==1 {print $3; exit}'
+}
+
+ui_count_files() {
+  ui_directory=$1
+  find "$ui_directory" -maxdepth 1 -type f -name '*.json' -print 2>/dev/null | wc -l | tr -d '[:space:]'
+}
+
+ui_service_badge() {
+  if service_active; then
+    printf '%s● 运行中%s' "$UI_GREEN" "$UI_RESET"
+  else
+    printf '%s○ 已停止%s' "$UI_RED" "$UI_RESET"
+  fi
+}
+
+ui_print_header() {
+  ui_setup
+  ui_os=$(ui_system_name)
+  ui_core=$(ui_core_version)
+  ui_nodes=$(ui_count_files "$SB_NODE_DIR")
+  ui_forwards=$(ui_count_files "$SB_FORWARD_DIR")
+  [ -n "$ui_core" ] || ui_core=未检测到
+
+  printf '\n%s   ____  ____%s\n' "$UI_CYAN" "$UI_RESET"
+  printf '%s  / ___|| __ )   sb · sing-box 管理器%s\n' "$UI_CYAN" "$UI_RESET"
+  printf '%s  \\___ \\|  _ \\  版本 %s%s\n' "$UI_CYAN" "$VERSION" "$UI_RESET"
+  printf '%s  |____/|____/%s\n' "$UI_CYAN" "$UI_RESET"
+  printf '%s  ─────────────────────────────────────────────%s\n' "$UI_MUTED" "$UI_RESET"
+  printf '  系统 %s%s%s · 模式 %s%s%s · 核心 %s%s%s\n' \
+    "$UI_CYAN" "$ui_os" "$UI_RESET" "$UI_CYAN" "$SB_PLATFORM" "$UI_RESET" "$UI_CYAN" "$ui_core" "$UI_RESET"
+  printf '  服务 %s · 节点 %s%s%s · 转发 %s%s%s\n' \
+    "$(ui_service_badge)" "$UI_GREEN" "$ui_nodes" "$UI_RESET" "$UI_GREEN" "$ui_forwards" "$UI_RESET"
+  printf '%s  ─────────────────────────────────────────────%s\n' "$UI_MUTED" "$UI_RESET"
+}
+
+ui_section() {
+  printf '\n%s【%s】%s\n' "$UI_CYAN" "$1" "$UI_RESET"
+}
+
+ui_main_menu_view() {
+  ui_clear
+  ui_print_header
+  ui_section 节点管理
+  printf '  %s[1]%s 添加节点      %s[2]%s 节点列表      %s[3]%s 节点详情\n' "$UI_GREEN" "$UI_RESET" "$UI_GREEN" "$UI_RESET" "$UI_GREEN" "$UI_RESET"
+  printf '  %s[4]%s 导入链接      %s[5]%s 节点二维码    %s[6]%s 修改节点\n' "$UI_GREEN" "$UI_RESET" "$UI_GREEN" "$UI_RESET" "$UI_GREEN" "$UI_RESET"
+  printf '  %s[7]%s 启用节点      %s[8]%s 禁用节点      %s[9]%s 重置密钥\n' "$UI_GREEN" "$UI_RESET" "$UI_GREEN" "$UI_RESET" "$UI_GREEN" "$UI_RESET"
+  printf '  %s[10]%s 删除节点\n' "$UI_RED" "$UI_RESET"
+  ui_section 服务与维护
+  printf '  %s[11]%s 服务状态      %s[12]%s 重启服务      %s[13]%s 创建备份\n' "$UI_GREEN" "$UI_RESET" "$UI_GREEN" "$UI_RESET" "$UI_GREEN" "$UI_RESET"
+  printf '  %s[14]%s 恢复备份      %s[15]%s 更新管理器    %s[16]%s 系统诊断\n' "$UI_GREEN" "$UI_RESET" "$UI_GREEN" "$UI_RESET" "$UI_GREEN" "$UI_RESET"
+  ui_section 网络工具
+  printf '  %s[17]%s 动态端口转发\n' "$UI_GREEN" "$UI_RESET"
+  printf '\n%s  ─────────────────────────────────────────────%s\n' "$UI_MUTED" "$UI_RESET"
+  printf '  %s[0]%s 退出管理器\n\n' "$UI_YELLOW" "$UI_RESET"
+}
+
+ui_forward_menu_view() {
+  ui_clear
+  ui_print_header
+  ui_section 动态端口转发
+  printf '  %s[1]%s 添加规则      %s[2]%s 查看规则      %s[3]%s 修改规则\n' "$UI_GREEN" "$UI_RESET" "$UI_GREEN" "$UI_RESET" "$UI_GREEN" "$UI_RESET"
+  printf '  %s[4]%s 启用规则      %s[5]%s 禁用规则      %s[6]%s 删除规则\n' "$UI_GREEN" "$UI_RESET" "$UI_GREEN" "$UI_RESET" "$UI_RED" "$UI_RESET"
+  printf '  %s[7]%s 解析并同步    %s[8]%s 后端状态\n' "$UI_GREEN" "$UI_RESET" "$UI_GREEN" "$UI_RESET"
+  printf '\n%s  ─────────────────────────────────────────────%s\n' "$UI_MUTED" "$UI_RESET"
+  printf '  %s[0]%s 返回主菜单\n\n' "$UI_YELLOW" "$UI_RESET"
+}
 
 usage() {
   cat <<'EOF'
@@ -519,20 +633,8 @@ interactive_select_forward() {
 
 interactive_forward_menu() {
   while :; do
-    cat <<'EOF'
-
-动态端口转发
-1) 添加转发规则
-2) 查看转发规则
-3) 修改转发规则
-4) 启用转发规则
-5) 禁用转发规则
-6) 删除转发规则
-7) 立即解析域名并同步
-8) 查看转发后端状态
-0) 返回主菜单
-EOF
-    printf '请输入选项编号: '
+    ui_forward_menu_view
+    printf '%s请选择操作 [0-8]: %s' "$UI_YELLOW" "$UI_RESET"
     read -r forward_choice
     case "$forward_choice" in
       1)
@@ -575,34 +677,14 @@ EOF
       0) return 0 ;;
       *) warn '无效的选项，请重新输入' ;;
     esac
+    ui_pause
   done
 }
 
 interactive_menu() {
   while :; do
-    cat <<'EOF'
-
-sb 中文管理菜单
-1) 添加节点
-2) 查看节点列表
-3) 查看节点详细信息
-4) 获取节点导入链接
-5) 显示节点二维码
-6) 修改节点设置
-7) 启用节点
-8) 禁用节点
-9) 重新生成节点密码或密钥
-10) 删除节点
-11) 查看服务状态
-12) 重启服务
-13) 创建备份
-14) 恢复备份
-15) 更新管理器
-16) 系统诊断
-17) 动态端口转发
-0) 退出
-EOF
-    printf '请输入选项编号: '
+    ui_main_menu_view
+    printf '%s请选择操作 [0-17]: %s' "$UI_YELLOW" "$UI_RESET"
     read -r choice
     case "$choice" in
       1) interactive_add_node ;;
@@ -645,10 +727,11 @@ EOF
       14) printf '请输入备份文件完整路径: '; read -r archive; command_restore "$archive" ;;
       15) command_update manager ;;
       16) command_doctor ;;
-      17) interactive_forward_menu ;;
+      17) interactive_forward_menu; continue ;;
       0) return 0 ;;
       *) warn '无效的选项，请重新输入' ;;
     esac
+    ui_pause
   done
 }
 
